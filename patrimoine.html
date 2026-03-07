@@ -4292,31 +4292,39 @@ document.addEventListener('DOMContentLoaded', function(){
 // ── Import Crypto ─────────────────────────────────────
 function importCrypto() {
   const cryptos = [
-    { ticker:'BTC-USD',       name:'Bitcoin',   qty:0.01661142,    pru:99985.13, price:67936.06 },
-    { ticker:'ETH-USD',       name:'Ethereum',  qty:0.35194744,    pru:2758.45,  price:1981.12  },
-    { ticker:'XRP-USD',       name:'XRP',       qty:377.38387997,  pru:2.48,     price:1.36     },
-    { ticker:'LINK-USD',      name:'ChainLink', qty:56.8559355,    pru:20.34,    price:8.79     },
-    { ticker:'XLM-USD',       name:'Stellar',   qty:2184.6173438,  pru:0.29,     price:0.15     },
-    { ticker:'SOL-USD',       name:'Solana',    qty:3.1357254,     pru:246.94,   price:84.29    },
-    { ticker:'HBAR-USD',      name:'Hedera',    qty:1003.30951697, pru:0.35,     price:0.10     },
-    { ticker:'AVAX-USD',      name:'Avalanche', qty:8.6759055,     pru:42.54,    price:9.00     },
-    { ticker:'RNDR-USD',      name:'Render',    qty:53.35514498,   pru:3.76,     price:1.38     },
-    { ticker:'SUI20947-USD',  name:'Sui',       qty:81.47849962,   pru:4.61,     price:0.90     },
-    { ticker:'ADA-USD',       name:'Cardano',   qty:202.9880324,   pru:0.86,     price:0.26     },
-    { ticker:'PEPE24478-USD', name:'Pepe',      qty:8639924,       pru:0.000003, price:0.000003 },
-    { ticker:'FIL-USD',       name:'Filecoin',  qty:29.29998423,   pru:7.58,     price:0.98     },
-    { ticker:'ALGO-USD',      name:'Algorand',  qty:235.764,       pru:0.48,     price:0.08     },
-    { ticker:'VET-USD',       name:'VeChain',   qty:2261.5362,     pru:0.07,     price:0.01     },
+    { coinId:'bitcoin',        name:'Bitcoin',   qty:0.01661142,    pru:99985.13, price:67936.06 },
+    { coinId:'ethereum',       name:'Ethereum',  qty:0.35194744,    pru:2758.45,  price:1981.12  },
+    { coinId:'ripple',         name:'XRP',       qty:377.38387997,  pru:2.48,     price:1.36     },
+    { coinId:'chainlink',      name:'ChainLink', qty:56.8559355,    pru:20.34,    price:8.79     },
+    { coinId:'stellar',        name:'Stellar',   qty:2184.6173438,  pru:0.29,     price:0.15     },
+    { coinId:'solana',         name:'Solana',    qty:3.1357254,     pru:246.94,   price:84.29    },
+    { coinId:'hedera-hashgraph',name:'Hedera',   qty:1003.30951697, pru:0.35,     price:0.10     },
+    { coinId:'avalanche-2',    name:'Avalanche', qty:8.6759055,     pru:42.54,    price:9.00     },
+    { coinId:'render-token',   name:'Render',    qty:53.35514498,   pru:3.76,     price:1.38     },
+    { coinId:'sui',            name:'Sui',       qty:81.47849962,   pru:4.61,     price:0.90     },
+    { coinId:'cardano',        name:'Cardano',   qty:202.9880324,   pru:0.86,     price:0.26     },
+    { coinId:'pepe',           name:'Pepe',      qty:8639924,       pru:0.000003, price:0.000003 },
+    { coinId:'filecoin',       name:'Filecoin',  qty:29.29998423,   pru:7.58,     price:0.98     },
+    { coinId:'algorand',       name:'Algorand',  qty:235.764,       pru:0.48,     price:0.08     },
+    { coinId:'vechain',        name:'VeChain',   qty:2261.5362,     pru:0.07,     price:0.01     },
   ];
   let added = 0;
   cryptos.forEach(function(c) {
-    // Evite les doublons
-    if (assets.find(function(a){ return a.ticker === c.ticker; })) return;
+    // Evite les doublons par nom
+    if (assets.find(function(a){ return a.cat==='crypto' && a.name === c.name; })) return;
     assets.push({
       id: 'asset_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
-      name: c.name, ticker: c.ticker, isin: '', category: 'crypto',
-      qty: c.qty, pru: c.pru, price: c.price, currency: 'USD',
-      note: 'Importé le 07/03/2026'
+      name: c.name,
+      cat: 'crypto',
+      date: '2026-03-07',
+      note: 'Importé le 07/03/2026',
+      cryptoCoin: c.coinId,
+      cryptoQty: c.qty,
+      cryptoDCA: c.pru,
+      cryptoPrice: usdToEur(c.price),
+      cryptoPlatform: 'Coinbase',
+      change24h: 0,
+      priceUpdatedAt: new Date().toISOString()
     });
     added++;
   });
