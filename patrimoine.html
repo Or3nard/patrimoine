@@ -3830,6 +3830,7 @@ const MN=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Se
 const MS=['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
 
 function renderMensuel(){
+  if(!document.getElementById('monthTitle')) return;
   document.getElementById('monthTitle').innerHTML=`<span>${MN[navM]}</span> ${navY}`;
   const trans=getMonthTrans(navY,navM);
   const inc=trans.filter(t=>t.type==='income').reduce((s,t)=>s+parseFloat(t.amount),0);
@@ -4619,6 +4620,7 @@ function deleteCredit(id) {
 }
 
 function renderCredits() {
+  if(!document.getElementById('creditsList')) return;
   const credits = getCredits();
   const totalPatrimoine = assets.reduce((s,a)=>s+getAssetValue(a),0);
   const typeLabel = {immobilier:'🏠 Immobilier', scpi:'🏢 SCPI', conso:'💳 Conso', auto:'🚗 Auto', familial:'🤝 Familial'};
