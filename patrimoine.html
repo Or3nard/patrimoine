@@ -4101,23 +4101,28 @@ function odUpdateUI(connected) {
 async function oneDriveSave() {
   if (!_dbToken) return;
   const data = { assets, goals, aHistory, transactions, credits: getCredits(), exportedAt: new Date().toISOString(), version: 3 };
+  const body = _aesKey ? _aesEncrypt(JSON.stringify(data)) : JSON.stringify(data);
+  const apiArg = '{"path":"' + DB_FILE + '","mode":"overwrite","autorename":false,"mute":false}';
+  console.log('[Dropbox Save] API-Arg:', apiArg);
+  console.log('[Dropbox Save] Token starts:', _dbToken.slice(0,20));
   try {
     const r = await fetch('https://content.dropboxapi.com/2/files/upload', {
       method: 'POST',
       headers: {
         'Authorization':   'Bearer ' + _dbToken,
         'Content-Type':    'application/octet-stream',
-        'Dropbox-API-Arg': JSON.stringify({ path: DB_FILE, mode: 'overwrite', autorename: false })
+        'Dropbox-API-Arg': apiArg
       },
-      body: _aesKey ? _aesEncrypt(JSON.stringify(data, null, 2)) : JSON.stringify(data, null, 2)
+      body: body
     });
+    console.log('[Dropbox Save] Response status:', r.status);
     if (r.status === 401) { const ok = await _dbRefreshToken(); if (ok) { await oneDriveSave(); return; } oneDriveDisconnect(); return; }
     if (!r.ok) {
       let errDetail = '';
-      try { const errJson = await r.json(); errDetail = JSON.stringify(errJson); } catch(e) {}
+      try { errDetail = await r.text(); } catch(e) {}
       console.error('[Dropbox Save] HTTP', r.status, errDetail);
-      toast('Erreur Dropbox ' + r.status + ' : ' + errDetail.slice(0,80));
-      throw new Error('HTTP ' + r.status + ' ' + errDetail);
+      toast('Erreur Dropbox ' + r.status + ' : ' + errDetail.slice(0,100));
+      return;
     }
     const now = new Date();
     const label = 'Dropbox ' + now.toLocaleDateString('fr-FR') + ' ' + now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
@@ -4125,7 +4130,11 @@ async function oneDriveSave() {
     document.getElementById('lastSaveLabel').textContent = label;
     document.getElementById('lastSaveLabel').style.color = '#06d6a0';
     setTimeout(function(){ var el=document.getElementById('lastSaveLabel'); if(el) el.style.color=''; }, 3000);
-  } catch(e) { toast('Erreur Dropbox : ' + e.message); }
+    toast('Sauvegarde Dropbox OK');
+  } catch(e) {
+    console.error('[Dropbox Save] Exception:', e);
+    toast('Erreur Dropbox : ' + e.message);
+  }
 }
 
 async function oneDriveLoad(silent) {
