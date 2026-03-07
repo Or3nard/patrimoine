@@ -4001,7 +4001,9 @@ const DB_APP_KEY  = 'fjt2q20exhqjbg5'; // remplacer avec votre App Key Dropbox
 const DB_FILE     = '/DashboardPatrimoine/patrimoine.json';
 const DB_REDIRECT = window.location.origin + window.location.pathname;
 
-let _dbToken = localStorage.getItem('db_token') || null;
+let _odAccount = null;
+let _dbToken = localStorage.getItem('db_token') || 'sl.u.AGU4d7duIxhAIgDosYuvaEBMiSfwQx-8lwvOssSo_7-rTGB_BZWcwXSgzaBzTvmpiBTS3-CJGMX-TRGRhSuEmh6N-ELWYGeVYORyh2TttQy6g-ywp-mhxBrBMRFk6n7veT09Szc9WuB7uQohQYV9LYCwDW5tbXoWl9fvElYd0bBj989Er4b40SEHZuj1dCVCvzM5FTLOQqwLLO-d3UV69Zc1HC77llrrUHqS7lMXx99El9MNF6_g6--R0kVE6hteXssO-RRgGEvpmnbVvl076s5DAFNTc9Nt6yq-3Fx3TOznJ9OLCXkwa286HyRTsLvPelS_n2yXp4hRjAqV1WWdlC8LGKcURRHjUMWXoqwUHctW75xGEnOSQ7RSXCD6IJPLDdZ6dUF4pupO-AZYPLEtw2M0a9HYDjK6ocNZKCNK2pmX_m_lqCM0nljq4l5UcPXYhJEeLGvSKJWlUW9ISmwabHgB1NRHVUO7e3PEORdG0A-Q3qX0VzQG297-WNbGNjbzH1c7cMKp3DBgJ2ZWdwCXHWZhOL0-STWK1-ti32F-NeXrELoPRBpydSACrsgkeSsbBw0Z5gmuTXs-4SNTLP4a52QtqoqM7U74fS3Etft6L3uk8RFY4wQSHhxfLOZ_L6Wf-t3ygynzPtCnZ35gsJbShz61zJWl8FSebqJPrRtPVe7po4ZAmo6gwBuWr4WvI2tYr9hKXNBc-C8w_rsjRfo2QaWXvijJKPdcaRy1sVbNek0n8n1gUDWJ8WiTmVumYIoUmJMwuqqpEKaZtvOc6-RtlT1h6gWadYL9TdhOdIbGwjQSJ5PBem0gIIjEvyG7JNqYKquYYZA6bNYRkrnYm_5Q85vtcSuzWovZtLWoqsYGmHokdhCFq69j5x8mF2LrUNlAUPBc_j-sNAn2_jAz6Ca0nRpYJcj9WVBJM4c2M0WAmdND60coEFJgziOgD357x7m2l2-oBlq9Hb10uMSuh1WsxYULg5TnAe73cbe5i-BlXOf5TcO4e1i8OL56NqN6o_QIUjYc-c7IO8r8UcE2wCanrPRM-M0rofXZTKCcxHCThCY8ek0KjqpjDRgoqV8A8UcbKWvhx0HvKUaepy5CDTvxdqmzukUHIwPkSnu31aQtmWLOqTuDUNS3-NKhN2I0nqHiLd1T2c5lWxz3dOfIAs3lbd0OjX2Wia1C_F9xvNYpHdJbY7T5nJ2gBfOQFJWwGzmuTt3BVJGv0CLuIwVtsUvosM-eiEWsrlTp5ETJdjygdyGzi2hlX2BS46iX_CNecrz1O4fj-V_SzlQAm0XG5E7_2VkxHUm4Nyt_4rnql4HT2O6d33Y7fj3_Bm5f5N7d0Hm28eHnbOozhf6I_FHx5xyAmwpaIjjepj6p66UZ0H60E0-AxTJCfi8q2akRAjwsZWppR3EYnm0YgyMhqddguuKe9FQQgaqqajwKMxIZ7ih-HJgiKQ';
+if (!localStorage.getItem('db_token')) { localStorage.setItem('db_token', _dbToken); }
 let _dbAutoSaveTimer = null;
 
 function _b64url(buf) {
@@ -4015,31 +4017,11 @@ async function _pkce() {
 }
 
 async function oneDriveConnect() {
-  try {
-    // Nettoyer les anciens tokens
-    localStorage.removeItem('db_token');
-    localStorage.removeItem('db_refresh');
-    _dbToken = null;
-
-    const { verifier, challenge } = await _pkce();
-    sessionStorage.setItem('db_verifier', verifier);
-
-    const params = new URLSearchParams({
-      client_id:             DB_APP_KEY,
-      response_type:         'code',
-      redirect_uri:          DB_REDIRECT,
-      code_challenge:        challenge,
-      code_challenge_method: 'S256',
-      token_access_type:     'offline',
-    });
-
-    const url = 'https://www.dropbox.com/oauth2/authorize?' + params.toString();
-    console.log('[Dropbox] Redirect vers:', url);
-    window.location.href = url;
-  } catch(e) {
-    console.error('[Dropbox] Erreur connexion:', e);
-    toast('Erreur: ' + e.message);
-  }
+  _dbToken = 'sl.u.AGU4d7duIxhAIgDosYuvaEBMiSfwQx-8lwvOssSo_7-rTGB_BZWcwXSgzaBzTvmpiBTS3-CJGMX-TRGRhSuEmh6N-ELWYGeVYORyh2TttQy6g-ywp-mhxBrBMRFk6n7veT09Szc9WuB7uQohQYV9LYCwDW5tbXoWl9fvElYd0bBj989Er4b40SEHZuj1dCVCvzM5FTLOQqwLLO-d3UV69Zc1HC77llrrUHqS7lMXx99El9MNF6_g6--R0kVE6hteXssO-RRgGEvpmnbVvl076s5DAFNTc9Nt6yq-3Fx3TOznJ9OLCXkwa286HyRTsLvPelS_n2yXp4hRjAqV1WWdlC8LGKcURRHjUMWXoqwUHctW75xGEnOSQ7RSXCD6IJPLDdZ6dUF4pupO-AZYPLEtw2M0a9HYDjK6ocNZKCNK2pmX_m_lqCM0nljq4l5UcPXYhJEeLGvSKJWlUW9ISmwabHgB1NRHVUO7e3PEORdG0A-Q3qX0VzQG297-WNbGNjbzH1c7cMKp3DBgJ2ZWdwCXHWZhOL0-STWK1-ti32F-NeXrELoPRBpydSACrsgkeSsbBw0Z5gmuTXs-4SNTLP4a52QtqoqM7U74fS3Etft6L3uk8RFY4wQSHhxfLOZ_L6Wf-t3ygynzPtCnZ35gsJbShz61zJWl8FSebqJPrRtPVe7po4ZAmo6gwBuWr4WvI2tYr9hKXNBc-C8w_rsjRfo2QaWXvijJKPdcaRy1sVbNek0n8n1gUDWJ8WiTmVumYIoUmJMwuqqpEKaZtvOc6-RtlT1h6gWadYL9TdhOdIbGwjQSJ5PBem0gIIjEvyG7JNqYKquYYZA6bNYRkrnYm_5Q85vtcSuzWovZtLWoqsYGmHokdhCFq69j5x8mF2LrUNlAUPBc_j-sNAn2_jAz6Ca0nRpYJcj9WVBJM4c2M0WAmdND60coEFJgziOgD357x7m2l2-oBlq9Hb10uMSuh1WsxYULg5TnAe73cbe5i-BlXOf5TcO4e1i8OL56NqN6o_QIUjYc-c7IO8r8UcE2wCanrPRM-M0rofXZTKCcxHCThCY8ek0KjqpjDRgoqV8A8UcbKWvhx0HvKUaepy5CDTvxdqmzukUHIwPkSnu31aQtmWLOqTuDUNS3-NKhN2I0nqHiLd1T2c5lWxz3dOfIAs3lbd0OjX2Wia1C_F9xvNYpHdJbY7T5nJ2gBfOQFJWwGzmuTt3BVJGv0CLuIwVtsUvosM-eiEWsrlTp5ETJdjygdyGzi2hlX2BS46iX_CNecrz1O4fj-V_SzlQAm0XG5E7_2VkxHUm4Nyt_4rnql4HT2O6d33Y7fj3_Bm5f5N7d0Hm28eHnbOozhf6I_FHx5xyAmwpaIjjepj6p66UZ0H60E0-AxTJCfi8q2akRAjwsZWppR3EYnm0YgyMhqddguuKe9FQQgaqqajwKMxIZ7ih-HJgiKQ';
+  localStorage.setItem('db_token', _dbToken);
+  odUpdateUI(true);
+  toast('Dropbox connecte !');
+  await oneDriveLoad(true);
 }
 
 async function _handleOAuthCallback() {
@@ -4111,7 +4093,7 @@ function odUpdateUI(connected) {
   });
   var lbl = document.getElementById('lastSaveLabel');
   if (lbl && connected) {
-    lbl.textContent = 'Dropbox connecte — ' + (_odAccount||'');
+    lbl.textContent = 'Dropbox connecte';
   }
 }
 
@@ -4182,7 +4164,10 @@ function odScheduleAutoSave() {
   _dbAutoSaveTimer = setTimeout(function(){ oneDriveSave(); }, 10000);
 }
 
-document.addEventListener('DOMContentLoaded', function(){ _handleOAuthCallback(); });
+document.addEventListener('DOMContentLoaded', function(){
+  _handleOAuthCallback();
+  if (_dbToken) { odUpdateUI(true); }
+});
 
 function saveAll(){
   localStorage.setItem('pat3_assets',JSON.stringify(assets));
