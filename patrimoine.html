@@ -4015,14 +4015,31 @@ async function _pkce() {
 }
 
 async function oneDriveConnect() {
-  const { verifier, challenge } = await _pkce();
-  sessionStorage.setItem('db_verifier', verifier);
-  const params = new URLSearchParams({
-    client_id: DB_APP_KEY, response_type: 'code',
-    redirect_uri: DB_REDIRECT, code_challenge: challenge,
-    code_challenge_method: 'S256', token_access_type: 'offline',
-  });
-  window.location.href = 'https://www.dropbox.com/oauth2/authorize?' + params;
+  try {
+    // Nettoyer les anciens tokens
+    localStorage.removeItem('db_token');
+    localStorage.removeItem('db_refresh');
+    _dbToken = null;
+
+    const { verifier, challenge } = await _pkce();
+    sessionStorage.setItem('db_verifier', verifier);
+
+    const params = new URLSearchParams({
+      client_id:             DB_APP_KEY,
+      response_type:         'code',
+      redirect_uri:          DB_REDIRECT,
+      code_challenge:        challenge,
+      code_challenge_method: 'S256',
+      token_access_type:     'offline',
+    });
+
+    const url = 'https://www.dropbox.com/oauth2/authorize?' + params.toString();
+    console.log('[Dropbox] Redirect vers:', url);
+    window.location.href = url;
+  } catch(e) {
+    console.error('[Dropbox] Erreur connexion:', e);
+    toast('Erreur: ' + e.message);
+  }
 }
 
 async function _handleOAuthCallback() {
@@ -4085,11 +4102,17 @@ function oneDriveDisconnect() {
 }
 
 function odUpdateUI(connected) {
-  document.getElementById('btnODConnect').style.display = connected ? 'none' : '';
-  document.getElementById('btnODSave').style.display    = connected ? ''     : 'none';
-  document.getElementById('btnODLoad').style.display    = connected ? ''     : 'none';
-  document.getElementById('btnODDisc').style.display    = connected ? ''     : 'none';
-  if (connected) document.getElementById('lastSaveLabel').textContent = 'Dropbox connecte';
+  var ids = ['btnODConnect','btnODSave','btnODLoad','btnODDisc'];
+  ids.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) { console.warn('[Dropbox] Element manquant:', id); return; }
+    if (id === 'btnODConnect') el.style.display = connected ? 'none' : '';
+    else el.style.display = connected ? '' : 'none';
+  });
+  var lbl = document.getElementById('lastSaveLabel');
+  if (lbl && connected) {
+    lbl.textContent = 'Dropbox connecte — ' + (_odAccount||'');
+  }
 }
 
 async function oneDriveSave() {
