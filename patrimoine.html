@@ -1072,6 +1072,8 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
 
 <script>
 var _odAccount = null; // compat guard
+let _eurUsd = parseFloat(localStorage.getItem('eur_usd_rate')) || 1.08; // taux EUR/USD
+let _eurUsdLastFetch = parseInt(localStorage.getItem('eur_usd_ts')) || 0;
 
 // ═══════════════════════════════════════════════
 // EVENT DELEGATION — un seul listener sur document
@@ -1240,7 +1242,7 @@ function getTotalCost(){ return assets.reduce((s,a)=>s+getAssetCost(a),0); }
 function getAssetValue(a) {
   if(a.cat==='livrets') return parseFloat(a.livretBalance||0);
   if(a.cat==='actions') return parseFloat(a.stockQty||0)*parseFloat(a.stockPrice||a.stockPRU||0);
-  if(a.cat==='crypto')  return parseFloat(a.cryptoQty||0)*parseFloat(a.cryptoPrice||a.cryptoDCA||0);
+  if(a.cat==='crypto')  return usdToEur(parseFloat(a.cryptoQty||0)*parseFloat(a.cryptoPrice||a.cryptoDCA||0));
   if(a.cat==='scpi')    return parseFloat(a.scpiParts||0)*parseFloat(a.scpiPartVal||0);
   if(a.cat==='immobilier') return parseFloat(a.immoValue||0);
   if(a.cat==='per')     return parseFloat(a.perValeur||0);
@@ -1407,7 +1409,7 @@ function renderGoalsHTML() {
 function renderActivityHTML() {
   const evts=aHistory.filter(h=>h.type!=='snap');
   if(!evts.length) return '<div class="empty-state" style="padding:24px 0"><div>Aucune activité</div></div>';
-  return [...evts].reverse().slice(0,8).map(h=>{
+  return evts.slice().reverse().slice(0,8).map(h=>{
     const cat=CAT[h.cat]||CAT.autre;
     return `<div class="timeline-item"><div class="timeline-dot" style="background:${cat.color}"></div><div class="timeline-content"><div class="timeline-title">${h.action} — ${esc(h.name)}</div><div class="timeline-date">${fmtDateFull(h.date)}</div></div><div class="timeline-amount" style="color:${h.action==='Supprimé'?'var(--red)':h.action==='Modifié'?'var(--gold)':'var(--green)'}">${fmt(h.val)}</div></div>`;
   }).join('');
@@ -1426,6 +1428,7 @@ function renderCatPage(cat) {
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${catDef.autoPrice?`<button class="btn btn-blue" onclick="refreshCatPrices('${cat}')" id="refreshCatBtn">↻ Actualiser les cours</button>`:''}
         <button class="btn btn-gold" onclick="openAssetModalForCat('${cat}')">+ Ajouter</button>
+        ${cat==='crypto' ? `<button class="btn btn-gold" onclick="importCrypto()" style="background:transparent;border:1px solid var(--gold);color:var(--gold)">📥 Importer mes cryptos</button>` : ''}
       </div>
     </div>
     ${renderCatKPIs(cat, catAssets, total)}
@@ -1903,6 +1906,8 @@ async function refreshCatPrices(cat) {
 }
 
 async function refreshAllPrices() {
+  fetchEurUsd();
+
   const btn=document.getElementById('refreshAllBtn');
   if(btn){btn.disabled=true;btn.textContent='↻ Actualisation...';}
   await fetchAllCryptoPrices();
@@ -1914,7 +1919,7 @@ async function refreshAllPrices() {
 async function fetchAllCryptoPrices() {
   const list = assets.filter(a=>a.cat==='crypto');
   if(!list.length) return;
-  const ids=[...new Set(list.map(a=>a.cryptoCoin==='custom'?a.cryptoCustomId:a.cryptoCoin).filter(Boolean))];
+  const ids=Array.from(new Set(list.map(function(a){return a.cryptoCoin==='custom'?a.cryptoCustomId:a.cryptoCoin;}).filter(Boolean)));
   if(!ids.length) return;
   try {
     const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=eur&include_24hr_change=true`);
@@ -2639,6 +2644,22 @@ async function onPERTickerInput(i, val) {
 
 // [symbol, isin, nom, type, place, devise]
 const LOCAL_DB = [
+  // ── Cryptos ──────────────────────────────────────────
+  { ticker:'BTC-USD',  isin:'',  name:'Bitcoin',   type:'crypto' },
+  { ticker:'ETH-USD',  isin:'',  name:'Ethereum',  type:'crypto' },
+  { ticker:'XRP-USD',  isin:'',  name:'XRP',       type:'crypto' },
+  { ticker:'LINK-USD', isin:'',  name:'ChainLink', type:'crypto' },
+  { ticker:'XLM-USD',  isin:'',  name:'Stellar',   type:'crypto' },
+  { ticker:'SOL-USD',  isin:'',  name:'Solana',    type:'crypto' },
+  { ticker:'HBAR-USD', isin:'',  name:'Hedera',    type:'crypto' },
+  { ticker:'AVAX-USD', isin:'',  name:'Avalanche', type:'crypto' },
+  { ticker:'RNDR-USD', isin:'',  name:'Render',    type:'crypto' },
+  { ticker:'SUI20947-USD', isin:'', name:'Sui',    type:'crypto' },
+  { ticker:'ADA-USD',  isin:'',  name:'Cardano',   type:'crypto' },
+  { ticker:'PEPE24478-USD', isin:'', name:'Pepe',  type:'crypto' },
+  { ticker:'FIL-USD',  isin:'',  name:'Filecoin',  type:'crypto' },
+  { ticker:'ALGO-USD', isin:'',  name:'Algorand',  type:'crypto' },
+  { ticker:'VET-USD',  isin:'',  name:'VeChain',   type:'crypto' },
   // ── Linxea Spirit 2 — vos positions exactes ──
   ['LCWD.PA','IE000BI8OT95','Amundi Core MSCI World UCITS ETF Acc','ETF','EPA','EUR'],
   ['AEEM.PA','LU1681045370','Amundi MSCI Emerging Markets Swap UCITS ETF EUR Acc','ETF','EPA','EUR'],
@@ -3831,8 +3852,8 @@ function renderMensuel(){
   document.getElementById('mTransBadge').textContent=trans.length+' transaction'+(trans.length>1?'s':'');
   if(!trans.length){tbody.innerHTML='';empty.style.display='block';return;}
   empty.style.display='none';
-  const ac=[...EC,...IC];
-  tbody.innerHTML=[...trans].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(t=>{
+  const ac=EC.concat(IC);
+  tbody.innerHTML=trans.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).map(t=>{
     const cat=ac.find(c=>c.id===t.cat)||{label:'—',color:'#6b6e78',icon:'⬡'};
     return `<tr class="budget-row" onclick="editTrans('${t.id}')"><td style="padding-left:20px"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:14px">${cat.icon}</span><div><div style="font-size:12px">${esc(t.desc)}</div>${t.note?`<div style="font-size:10px;color:var(--muted)">${esc(t.note)}</div>`:''}</div></div></td>
     <td><div style="display:flex;align-items:center;gap:5px"><div style="width:6px;height:6px;border-radius:2px;background:${cat.color}"></div><span style="color:var(--muted);font-size:11px">${cat.label}</span></div></td>
@@ -3862,7 +3883,7 @@ function renderTransDonut(trans,chart,cats,centerId,legendId,total){
 
 function renderAnnuel(){
   const years=new Set(transactions.map(t=>t.date?t.date.slice(0,4):null).filter(Boolean));years.add(String(NOW.getFullYear()));
-  const sorted=[...years].sort().reverse();
+  const sorted=Array.from(years).sort().reverse();
   document.getElementById('yearSelector').innerHTML=sorted.map(y=>`<button class="year-btn ${String(selYear)===y?'active':''}" onclick="selYear=${y};renderAnnuel();document.querySelectorAll('.year-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">${y}</button>`).join('');
   let ti=0,te=0;const mI=[],mE=[];
   for(let m=0;m<12;m++){const t=getMonthTrans(selYear,m);const i=t.filter(x=>x.type==='income').reduce((s,x)=>s+parseFloat(x.amount),0);const e=t.filter(x=>x.type==='expense').reduce((s,x)=>s+parseFloat(x.amount),0);mI.push(i);mE.push(e);ti+=i;te+=e;}
@@ -4004,6 +4025,7 @@ function unlockApp() {
         // Mot de passe correct
         _aesKey = pin;
         _failCount = 0;
+        fetchEurUsd(); // Mise à jour taux EUR/USD en arrière-plan
         // Récupère le token chiffré depuis localStorage si disponible
         const storedTok = _decryptToken(pin);
         if (storedTok) _dbToken = storedTok;
@@ -4087,8 +4109,10 @@ if (!localStorage.getItem('db_token')) { localStorage.setItem('db_token', _dbTok
 let _dbAutoSaveTimer = null;
 
 function _b64url(buf) {
-  return btoa(String.fromCharCode(...new Uint8Array(buf)))
-    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+  const arr = new Uint8Array(buf);
+  let str = '';
+  for (let i = 0; i < arr.length; i++) str += String.fromCharCode(arr[i]);
+  return btoa(str).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
 }
 async function _pkce() {
   const verifier = _b64url(crypto.getRandomValues(new Uint8Array(32)));
@@ -4263,6 +4287,80 @@ document.addEventListener('DOMContentLoaded', function(){
   _handleOAuthCallback();
   if (_dbToken) { odUpdateUI(true); }
 });
+
+// ── Import Crypto ─────────────────────────────────────
+function importCrypto() {
+  const cryptos = [
+    { ticker:'BTC-USD',       name:'Bitcoin',   qty:0.01661142,    pru:99985.13, price:67936.06 },
+    { ticker:'ETH-USD',       name:'Ethereum',  qty:0.35194744,    pru:2758.45,  price:1981.12  },
+    { ticker:'XRP-USD',       name:'XRP',       qty:377.38387997,  pru:2.48,     price:1.36     },
+    { ticker:'LINK-USD',      name:'ChainLink', qty:56.8559355,    pru:20.34,    price:8.79     },
+    { ticker:'XLM-USD',       name:'Stellar',   qty:2184.6173438,  pru:0.29,     price:0.15     },
+    { ticker:'SOL-USD',       name:'Solana',    qty:3.1357254,     pru:246.94,   price:84.29    },
+    { ticker:'HBAR-USD',      name:'Hedera',    qty:1003.30951697, pru:0.35,     price:0.10     },
+    { ticker:'AVAX-USD',      name:'Avalanche', qty:8.6759055,     pru:42.54,    price:9.00     },
+    { ticker:'RNDR-USD',      name:'Render',    qty:53.35514498,   pru:3.76,     price:1.38     },
+    { ticker:'SUI20947-USD',  name:'Sui',       qty:81.47849962,   pru:4.61,     price:0.90     },
+    { ticker:'ADA-USD',       name:'Cardano',   qty:202.9880324,   pru:0.86,     price:0.26     },
+    { ticker:'PEPE24478-USD', name:'Pepe',      qty:8639924,       pru:0.000003, price:0.000003 },
+    { ticker:'FIL-USD',       name:'Filecoin',  qty:29.29998423,   pru:7.58,     price:0.98     },
+    { ticker:'ALGO-USD',      name:'Algorand',  qty:235.764,       pru:0.48,     price:0.08     },
+    { ticker:'VET-USD',       name:'VeChain',   qty:2261.5362,     pru:0.07,     price:0.01     },
+  ];
+  let added = 0;
+  cryptos.forEach(function(c) {
+    // Evite les doublons
+    if (assets.find(function(a){ return a.ticker === c.ticker; })) return;
+    assets.push({
+      id: 'asset_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+      name: c.name, ticker: c.ticker, isin: '', category: 'crypto',
+      qty: c.qty, pru: c.pru, price: c.price, currency: 'USD',
+      note: 'Importé le 07/03/2026'
+    });
+    added++;
+  });
+  saveAll(); renderAll();
+  fetchEurUsd().then(function(rate) {
+    renderAll();
+    toast('✅ ' + added + ' cryptos importées ! (1 USD = ' + rate.toFixed(4) + ' EUR)');
+  });
+}
+
+
+// ── Taux EUR/USD ──────────────────────────────────────
+async function fetchEurUsd() {
+  const now = Date.now();
+  if (now - _eurUsdLastFetch < 3600000) return _eurUsd; // cache 1h
+  const proxies = [
+    'https://corsproxy.io/?url=',
+    'https://api.allorigins.win/raw?url='
+  ];
+  const url = 'https://query1.finance.yahoo.com/v8/finance/chart/EURUSD=X?interval=1d&range=1d';
+  for (let pi = 0; pi < proxies.length; pi++) {
+    try {
+      const r = await fetch(proxies[pi] + encodeURIComponent(url), {signal: AbortSignal.timeout(5000)});
+      if (!r.ok) continue;
+      const d = await r.json();
+      const results = d && d.chart && d.chart.result;
+      const rate = results && results[0] && results[0].meta && results[0].meta.regularMarketPrice;
+      if (rate && rate > 0) {
+        _eurUsd = rate;
+        _eurUsdLastFetch = now;
+        localStorage.setItem('eur_usd_rate', String(rate));
+        localStorage.setItem('eur_usd_ts', String(now));
+        console.log('[EUR/USD] Taux mis à jour:', rate);
+        const el = document.getElementById('eurUsdDisplay');
+        if (el) el.textContent = rate.toFixed(4);
+        return rate;
+      }
+    } catch(e) { continue; }
+  }
+  return _eurUsd;
+}
+
+function usdToEur(usd) { return usd / _eurUsd; }
+function fmtEur(val) { return new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:2}).format(val); }
+
 
 function saveAll(){
   localStorage.setItem('pat3_assets',JSON.stringify(assets));
@@ -4606,7 +4704,7 @@ function renderCreditAmortChart(credits) {
   }
 
   // Build monthly projection for next 30 years or until all credits end
-  const maxMois = Math.min(360, Math.max(...credits.map(c=>c.moisRestants||0)) + 12);
+  const moisArr = credits.map(function(c){return c.moisRestants||0;}); const maxMois = Math.min(360, (moisArr.length ? Math.max.apply(null, moisArr) : 0) + 12);
   const labels = [], capitalData = [], interetsData = [];
 
   for (let m = 0; m <= maxMois; m += 3) {
@@ -4691,12 +4789,12 @@ function init(){
   }
 
   buildSubNav();
-  renderGlobal();
-  renderMensuel();
-  renderCredits();
+  try { renderGlobal(); } catch(e) { console.error('renderGlobal FAIL:', e.message, e.stack); }
+  try { renderMensuel(); } catch(e) { console.error('renderMensuel FAIL:', e.message, e.stack); }
+  try { renderCredits(); } catch(e) { console.error('renderCredits FAIL:', e.message, e.stack); }
 }
 
-init();
+try { init(); } catch(e) { console.error('INIT ERROR:', e.message, e.stack); alert('Erreur init: ' + e.message + '\n' + (e.stack||'').split('\n').slice(0,3).join('\n')); }
 </script>
 </body>
 </html>
