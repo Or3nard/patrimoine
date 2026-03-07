@@ -4328,9 +4328,9 @@ function importCrypto() {
     });
     added++;
   });
-  saveAll(); renderAll();
+  saveAll(); buildSubNav(); renderSubPage(currentSubPage);
   fetchEurUsd().then(function(rate) {
-    renderAll();
+    buildSubNav(); renderSubPage('crypto');
     toast('✅ ' + added + ' cryptos importées ! (1 USD = ' + rate.toFixed(4) + ' EUR)');
   });
 }
