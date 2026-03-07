@@ -3932,13 +3932,43 @@ function pushAH(action,a){aHistory.push({action,name:a.name,cat:a.cat,val:getAss
 
 
 // ══════════════════════════════════════════════════════
-// SÉCURITÉ — Mot de passe + Chiffrement AES Dropbox
+// SÉCURITÉ — PBKDF2 + Token chiffré + AES Dropbox
 // ══════════════════════════════════════════════════════
-const LOCK_KEY = 'pat3_lock_hash';
-let _aesKey = null; // dérivé du mot de passe, utilisé pour chiffrer/déchiffrer Dropbox
+const LOCK_KEY       = 'pat3_lock_hash';
+const LOCK_SALT_KEY  = 'pat3_lock_salt';
+const TOKEN_ENC_KEY  = 'pat3_db_token_enc';
+const PBKDF2_ITER    = 100000; // 100k itérations — ~2s, résistant au bruteforce
+let _aesKey = null;
+let _failCount = 0;
 
-function _hashPin(pin) {
-  return CryptoJS.SHA256(pin + 'patrimoine_salt_2026').toString();
+function _getOrCreateSalt() {
+  let salt = localStorage.getItem(LOCK_SALT_KEY);
+  if (!salt) {
+    // Sel aléatoire unique par appareil
+    const arr = new Uint8Array(16);
+    crypto.getRandomValues(arr);
+    salt = Array.from(arr).map(b => b.toString(16).padStart(2,'0')).join('');
+    localStorage.setItem(LOCK_SALT_KEY, salt);
+  }
+  return salt;
+}
+
+function _deriveKey(pin) {
+  const salt = _getOrCreateSalt();
+  return CryptoJS.PBKDF2(pin, salt, { keySize: 256/32, iterations: PBKDF2_ITER }).toString();
+}
+
+function _encryptToken(pin, token) {
+  return CryptoJS.AES.encrypt(token, pin + '_tok').toString();
+}
+
+function _decryptToken(pin) {
+  const enc = localStorage.getItem(TOKEN_ENC_KEY);
+  if (!enc) return null;
+  try {
+    const dec = CryptoJS.AES.decrypt(enc, pin + '_tok').toString(CryptoJS.enc.Utf8);
+    return dec && dec.startsWith('sl.') ? dec : null;
+  } catch(e) { return null; }
 }
 
 function unlockApp() {
@@ -3947,28 +3977,77 @@ function unlockApp() {
     document.getElementById('lockError').textContent = 'Minimum 4 caractères';
     return;
   }
-  const stored = localStorage.getItem(LOCK_KEY);
-  const hash   = _hashPin(pin);
 
-  if (!stored) {
-    // Première fois — on enregistre le hash
-    localStorage.setItem(LOCK_KEY, hash);
-    _aesKey = pin;
-    document.getElementById('lockScreen').classList.add('hidden');
-    toast('Mot de passe défini. Retenez-le bien !');
-  } else if (stored === hash) {
-    _aesKey = pin;
-    document.getElementById('lockScreen').classList.add('hidden');
-  } else {
-    document.getElementById('lockError').textContent = 'Mot de passe incorrect';
-    document.getElementById('lockPin').value = '';
-    document.getElementById('lockPin').focus();
-    // Petite animation de secousse
-    const box = document.querySelector('.lock-box');
-    box.style.transform = 'translateX(-8px)';
-    setTimeout(() => box.style.transform = 'translateX(8px)', 80);
-    setTimeout(() => box.style.transform = '', 160);
-  }
+  // Afficher spinner pendant PBKDF2
+  const btn = document.querySelector('#lockScreen button');
+  const origText = btn.textContent;
+  btn.textContent = '⏳ Vérification...';
+  btn.disabled = true;
+  document.getElementById('lockError').textContent = '';
+
+  // PBKDF2 est bloquant — on laisse le DOM se mettre à jour d'abord
+  setTimeout(function() {
+    try {
+      const stored = localStorage.getItem(LOCK_KEY);
+      const hash   = _deriveKey(pin);
+
+      if (!stored) {
+        // Première utilisation — enregistre le hash PBKDF2
+        localStorage.setItem(LOCK_KEY, hash);
+        // Chiffre et stocke le token Dropbox
+        if (_dbToken) localStorage.setItem(TOKEN_ENC_KEY, _encryptToken(pin, _dbToken));
+        _aesKey = pin;
+        _failCount = 0;
+        document.getElementById('lockScreen').classList.add('hidden');
+        toast('🔐 Mot de passe défini avec PBKDF2. Retenez-le bien !');
+      } else if (stored === hash) {
+        // Mot de passe correct
+        _aesKey = pin;
+        _failCount = 0;
+        // Récupère le token chiffré depuis localStorage si disponible
+        const storedTok = _decryptToken(pin);
+        if (storedTok) _dbToken = storedTok;
+        // Si token en clair dans le HTML mais pas encore chiffré en localStorage, le chiffrer
+        if (_dbToken && !localStorage.getItem(TOKEN_ENC_KEY)) {
+          localStorage.setItem(TOKEN_ENC_KEY, _encryptToken(pin, _dbToken));
+        }
+        document.getElementById('lockScreen').classList.add('hidden');
+        if (_dbToken) { localStorage.setItem('db_token', _dbToken); odUpdateUI(true); }
+      } else {
+        _failCount++;
+        const remaining = 5 - _failCount;
+        const msg = remaining > 0
+          ? 'Mot de passe incorrect (' + remaining + ' essais restants)'
+          : '🔒 Trop de tentatives — attendez 30 secondes';
+        document.getElementById('lockError').textContent = msg;
+        document.getElementById('lockPin').value = '';
+        document.getElementById('lockPin').focus();
+        const box = document.querySelector('.lock-box');
+        box.style.transform = 'translateX(-8px)';
+        setTimeout(() => box.style.transform = 'translateX(8px)', 80);
+        setTimeout(() => box.style.transform = '', 160);
+        if (_failCount >= 5) {
+          btn.disabled = true;
+          document.getElementById('lockPin').disabled = true;
+          let wait = 30;
+          const iv = setInterval(function() {
+            wait--;
+            document.getElementById('lockError').textContent = '🔒 Attendez ' + wait + ' secondes...';
+            if (wait <= 0) {
+              clearInterval(iv);
+              _failCount = 0;
+              btn.disabled = false;
+              document.getElementById('lockPin').disabled = false;
+              document.getElementById('lockError').textContent = '';
+            }
+          }, 1000);
+        }
+      }
+    } finally {
+      btn.textContent = origText;
+      if (!btn.disabled) btn.disabled = false;
+    }
+  }, 50);
 }
 
 function _aesEncrypt(jsonStr) {
