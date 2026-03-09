@@ -4107,8 +4107,8 @@ const DB_APP_KEY  = 'fjt2q20exhqjbg5'; // remplacer avec votre App Key Dropbox
 const DB_FILE     = '/DashboardPatrimoine/patrimoine.json';
 const DB_REDIRECT = window.location.origin + window.location.pathname;
 
-let _dbToken = localStorage.getItem('db_token') || 'sl.u.AGUMVdNEnhrUuadg4cAQcu7s9c8cMOEAUVLCqpH2VaNbFFU1VzJ0BIMGkQcZpYFCoL6z7D6HNtppeblx4ZzyZKqleCbVXdH2Coz8NUhfUS6RMLp9kHlBTlDXJtmlFRIH5xJKjsWnIznq7hUnvdx2uQSXlPIpF_Jj27kysvVz1POv4u0lZphYLPMDWsKpg1cOjQFTlnUUhi9a6YndErelXSmzUXacjkZtL0C5u3d_kaljK_3xwcSu2u9ck_T2-VID2yKKGD6s4_lu3K2h30mvIGHyf4BrbUu-w8AGVqWOyNr-KcBbjHYqRpRwfzuLnjmX2HECuDxUfLQxbIboCAqHIFEanfZXDAG7Yx0d0ZrUlr5MIXbZ37tZuZ8_5PphX4X1EkaEqjBiv3op_H8TUl1dDuV0McFR2hCKEklXjbKPP6xACZZImWm7i_9Tz06y1YqIjn_UVCHkYNjrNdK4E1pYblBYt7FNC6FMTihaodGE70SEtyouczUiMfESyhOv13q1HNdTVPAmSjjvb4fNc7GEXb-zArcPdl6jdMhCivhYa1_s4i85ssYEdbEIDvGYS88X1o7fpvu--RtK49qCgY2J2vquZkhZM61l4t03oxF04eAllV220_QCpy4FYUWueSBOjnl_v019QKSmCfKILBiSrrEkfiuBfwBUJE1BGu59llsmXkL_B1LxR_R-9Buzp68ibaN6i1Us7IOC-XwcDRcVc87Z54S76aP-qiTyW0WvU303Vai5CuDJ8nVhAXmjokw22a7LWEg50y6lcoKu5WUMchZXb5bNg6vpGUd7LrzLRO7thk-nqJoh-83go5XVYr1ZfKYb_MSSbD_0-6xRCiMVfg0xUlRkCOZZ9Al_GpahjMq1yRGKVa4pRRxQZjjOawECQhW02cjQuJ7hXg41KXQ5Exeh_B4C1AGWG4EswGQIHt-_NWfpb-ubJ0MZBvooWpdbjzmrhbZhkIxO1AFZSoqGg3jnUPOdMQTuy4vK9wQF9t46EugYPuYiu1BdhpEHmc6Xk68CHx7-rmDiY1Nfqh7xgON9zLkL6FPqoQReLPCZP1wzBGkj52enFEVdzVG01S2p7Cr8YoI8VEpdx_fIoTjXIl9vGIAqVD0NXqM5jVMKibZgv40iSLc16Ika2I1ToL_f8OvvJefBMhBwDB7QV6mweW0wIek-u4YC59YuDiWlnhELiAXMkXSEq9Kxr1S49uX0u3aNH46_btYfuCWx8b57QZ5CCFjDh3wjteSvfjUlFTpct8w92w7A6I1k5bt8siyqX8OEdKyXCsixgEruH6R4688s0C6pQzNA8cr4xuN1B8Y4sV00cZ2-6MFa1Zu7y4qq1-CropT3nGjMwfUYGqQo-vajmrXPKSJiGoKEw8e8j0jScUnFK5ht5Kbahb9pKYxjEW_bHC7UklXHrAwr_MbtmfMQzy-wGU64hjI1rQWV76fYZg';
-if (!localStorage.getItem('db_token')) { localStorage.setItem('db_token', _dbToken); localStorage.removeItem('db_refresh'); }
+let _dbToken = localStorage.getItem('db_token') || null;
+// Token géré via OAuth PKCE — pas de token hardcodé
 let _dbAutoSaveTimer = null;
 
 function _b64url(buf) {
@@ -4124,11 +4124,18 @@ async function _pkce() {
 }
 
 async function oneDriveConnect() {
-  _dbToken = 'sl.u.AGUMVdNEnhrUuadg4cAQcu7s9c8cMOEAUVLCqpH2VaNbFFU1VzJ0BIMGkQcZpYFCoL6z7D6HNtppeblx4ZzyZKqleCbVXdH2Coz8NUhfUS6RMLp9kHlBTlDXJtmlFRIH5xJKjsWnIznq7hUnvdx2uQSXlPIpF_Jj27kysvVz1POv4u0lZphYLPMDWsKpg1cOjQFTlnUUhi9a6YndErelXSmzUXacjkZtL0C5u3d_kaljK_3xwcSu2u9ck_T2-VID2yKKGD6s4_lu3K2h30mvIGHyf4BrbUu-w8AGVqWOyNr-KcBbjHYqRpRwfzuLnjmX2HECuDxUfLQxbIboCAqHIFEanfZXDAG7Yx0d0ZrUlr5MIXbZ37tZuZ8_5PphX4X1EkaEqjBiv3op_H8TUl1dDuV0McFR2hCKEklXjbKPP6xACZZImWm7i_9Tz06y1YqIjn_UVCHkYNjrNdK4E1pYblBYt7FNC6FMTihaodGE70SEtyouczUiMfESyhOv13q1HNdTVPAmSjjvb4fNc7GEXb-zArcPdl6jdMhCivhYa1_s4i85ssYEdbEIDvGYS88X1o7fpvu--RtK49qCgY2J2vquZkhZM61l4t03oxF04eAllV220_QCpy4FYUWueSBOjnl_v019QKSmCfKILBiSrrEkfiuBfwBUJE1BGu59llsmXkL_B1LxR_R-9Buzp68ibaN6i1Us7IOC-XwcDRcVc87Z54S76aP-qiTyW0WvU303Vai5CuDJ8nVhAXmjokw22a7LWEg50y6lcoKu5WUMchZXb5bNg6vpGUd7LrzLRO7thk-nqJoh-83go5XVYr1ZfKYb_MSSbD_0-6xRCiMVfg0xUlRkCOZZ9Al_GpahjMq1yRGKVa4pRRxQZjjOawECQhW02cjQuJ7hXg41KXQ5Exeh_B4C1AGWG4EswGQIHt-_NWfpb-ubJ0MZBvooWpdbjzmrhbZhkIxO1AFZSoqGg3jnUPOdMQTuy4vK9wQF9t46EugYPuYiu1BdhpEHmc6Xk68CHx7-rmDiY1Nfqh7xgON9zLkL6FPqoQReLPCZP1wzBGkj52enFEVdzVG01S2p7Cr8YoI8VEpdx_fIoTjXIl9vGIAqVD0NXqM5jVMKibZgv40iSLc16Ika2I1ToL_f8OvvJefBMhBwDB7QV6mweW0wIek-u4YC59YuDiWlnhELiAXMkXSEq9Kxr1S49uX0u3aNH46_btYfuCWx8b57QZ5CCFjDh3wjteSvfjUlFTpct8w92w7A6I1k5bt8siyqX8OEdKyXCsixgEruH6R4688s0C6pQzNA8cr4xuN1B8Y4sV00cZ2-6MFa1Zu7y4qq1-CropT3nGjMwfUYGqQo-vajmrXPKSJiGoKEw8e8j0jScUnFK5ht5Kbahb9pKYxjEW_bHC7UklXHrAwr_MbtmfMQzy-wGU64hjI1rQWV76fYZg';
-  localStorage.setItem('db_token', _dbToken);
-  odUpdateUI(true);
-  toast('Dropbox connecte !');
-  await oneDriveLoad(true);
+  // Lance le vrai flow OAuth2 PKCE avec token_access_type=offline → refresh_token permanent
+  const { verifier, challenge } = await _pkce();
+  sessionStorage.setItem('db_verifier', verifier);
+  const params = new URLSearchParams({
+    client_id:             DB_APP_KEY,
+    redirect_uri:          DB_REDIRECT,
+    response_type:         'code',
+    code_challenge:        challenge,
+    code_challenge_method: 'S256',
+    token_access_type:     'offline',
+  });
+  window.location.href = 'https://www.dropbox.com/oauth2/authorize?' + params.toString();
 }
 
 async function _handleOAuthCallback() {
@@ -4200,7 +4207,8 @@ function odUpdateUI(connected) {
   });
   var lbl = document.getElementById('lastSaveLabel');
   if (lbl && connected) {
-    lbl.textContent = 'Dropbox connecte';
+    var hasRefresh = localStorage.getItem('db_refresh');
+    lbl.textContent = hasRefresh ? 'Dropbox connecté ✓' : 'Dropbox connecté (session)';
   }
 }
 
@@ -4630,7 +4638,7 @@ function deleteCredit(id) {
 }
 
 function renderCredits() {
-  if(!document.getElementById('creditsList')) return;
+  if(!document.getElementById('creditTableWrap')) return;
   const credits = getCredits();
   const totalPatrimoine = assets.reduce((s,a)=>s+getAssetValue(a),0);
   const typeLabel = {immobilier:'🏠 Immobilier', scpi:'🏢 SCPI', conso:'💳 Conso', auto:'🚗 Auto', familial:'🤝 Familial'};
@@ -4803,7 +4811,7 @@ function init(){
   buildSubNav();
   try { renderGlobal(); } catch(e) { console.error('renderGlobal FAIL:', e.message, e.stack); }
   try { renderMensuel(); } catch(e) { console.error('renderMensuel FAIL:', e.message, e.stack); }
-  try { renderCredits(); } catch(e) { console.error('renderCredits FAIL:', e.message, e.stack); }
+  renderCredits();
 }
 
 try { init(); } catch(e) { console.error('INIT ERROR:', e.message, e.stack); alert('Erreur init: ' + e.message + '\n' + (e.stack||'').split('\n').slice(0,3).join('\n')); }
