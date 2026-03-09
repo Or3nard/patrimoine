@@ -4062,10 +4062,9 @@ function unlockApp() {
         if (_dbToken) {
           localStorage.setItem('db_token', _dbToken);
           odUpdateUI(true);
-          // Auto-chargement depuis Dropbox après déverrouillage
-          oneDriveLoad(true).then(function() {
-            // Si Dropbox OK, les données sont à jour
-          }).catch(function() {});
+          // PAS d'auto-load — les données locales sont prioritaires
+          // L'utilisateur choisit "Charger" pour récupérer depuis Dropbox
+          // ou "Sauver" pour pousser ses données locales vers Dropbox
         }
       } else {
         _failCount++;
@@ -4309,6 +4308,14 @@ async function oneDriveLoad(silent) {
     }
     const data = parsed;
     if (!data.assets) { toast('Fichier invalide'); return; }
+    // Comparaison des timestamps : charger seulement si Dropbox est plus récent
+    const dbDate    = data.exportedAt ? new Date(data.exportedAt) : new Date(0);
+    const localSave = localStorage.getItem('pat3_lastsave_ts');
+    const localDate = localSave ? new Date(localSave) : new Date(0);
+    if (!silent && localDate > dbDate) {
+      const ok = confirm('Vos données locales (' + localDate.toLocaleString('fr-FR') + ') sont plus récentes que Dropbox (' + dbDate.toLocaleString('fr-FR') + ').\nÉcraser quand même avec la version Dropbox ?');
+      if (!ok) return;
+    }
     assets=data.assets||[]; goals=data.goals||[]; aHistory=data.aHistory||[]; transactions=data.transactions||[];
     if (data.credits) saveCredits(data.credits);
     localStorage.setItem('pat3_assets',JSON.stringify(assets));
@@ -4319,7 +4326,7 @@ async function oneDriveLoad(silent) {
     localStorage.setItem('pat3_lastsave', label);
     document.getElementById('lastSaveLabel').textContent = label;
     buildSubNav(); renderSubPage(currentSubPage); renderDep(); renderCredits();
-    if (!silent) toast('Donnees chargees depuis Dropbox');
+    if (!silent) toast('✅ Données chargées depuis Dropbox');
   } catch(e) { if (!silent) toast('Erreur : ' + e.message); }
 }
 
@@ -4419,6 +4426,7 @@ function fmtEur(val) { return new Intl.NumberFormat('fr-FR',{style:'currency',cu
 
 
 function saveAll(){
+  localStorage.setItem('pat3_lastsave_ts', new Date().toISOString());
   localStorage.setItem('pat3_assets',JSON.stringify(assets));
   odScheduleAutoSave();
   const key=new Date().toISOString().slice(0,7),total=getTotalVal();
