@@ -1224,17 +1224,31 @@ function mkDonut(id, cut='70%') {
     options:{responsive:true,maintainAspectRatio:false,cutout:cut,plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a1d22',borderColor:'#252830',borderWidth:1,titleColor:'#6b6e78',bodyColor:'#e8e6e0',callbacks:{label:function(c){return '  '+c.label+': '+fmt(c.raw);}}}}}
   });
 }
+function _destroyChart(id) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var c = Chart.getChart(el);
+  if (c) c.destroy();
+}
 function initCharts() {
+  if(typeof Chart==='undefined'){console.error('Chart.js non chargé');return;}
+  _destroyChart('evoChart'); _destroyChart('donutChart');
+  _destroyChart('expDonut'); _destroyChart('incDonut'); _destroyChart('annualBar');
+  if(evoC){try{evoC.destroy();}catch(e){}} evoC=null;
+  if(donutC){try{donutC.destroy();}catch(e){}} donutC=null;
+  if(expDonutC){try{expDonutC.destroy();}catch(e){}} expDonutC=null;
+  if(incDonutC){try{incDonutC.destroy();}catch(e){}} incDonutC=null;
+  if(annualBarC){try{annualBarC.destroy();}catch(e){}} annualBarC=null;
   evoC = new Chart(document.getElementById('evoChart').getContext('2d'), {
     type:'line', data:{labels:[],datasets:[{data:[],borderColor:'#c9a84c',backgroundColor:'rgba(201,168,76,0.06)',borderWidth:1.5,fill:true,tension:0.4,pointRadius:0,pointHoverRadius:4}]},
-    options:{responsive:true,maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a1d22',borderColor:'#252830',borderWidth:1,titleColor:'#6b6e78',bodyColor:'#e8e6e0',callbacks:{label:c=>'  '+fmt(c.raw)}}},scales:{x:{grid:{color:'rgba(255,255,255,0.03)'},ticks:{color:'#6b6e78',font:{family:'DM Mono',size:10},maxTicksLimit:8}},y:{grid:{color:'rgba(255,255,255,0.03)'},ticks:{color:'#6b6e78',font:{family:'DM Mono',size:10},callback:v=>fmtS(v)}}}}
+    options:{responsive:true,maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a1d22',borderColor:'#252830',borderWidth:1,titleColor:'#6b6e78',bodyColor:'#e8e6e0',callbacks:{label:function(c){return '  '+fmt(c.raw);}}}},scales:{x:{grid:{color:'rgba(255,255,255,0.03)'},ticks:{color:'#6b6e78',font:{family:'DM Mono',size:10},maxTicksLimit:8}},y:{grid:{color:'rgba(255,255,255,0.03)'},ticks:{color:'#6b6e78',font:{family:'DM Mono',size:10},callback:function(v){return fmtS(v);}}}}}
   });
   donutC    = mkDonut('donutChart');
   expDonutC = mkDonut('expDonut','66%');
   incDonutC = mkDonut('incDonut','66%');
   annualBarC = new Chart(document.getElementById('annualBar').getContext('2d'), {
     type:'bar', data:{labels:[],datasets:[{label:'Revenus',data:[],backgroundColor:'rgba(76,175,130,0.65)',borderRadius:4},{label:'Dépenses',data:[],backgroundColor:'rgba(224,92,92,0.65)',borderRadius:4}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#6b6e78',font:{family:'DM Mono',size:10}}},tooltip:{backgroundColor:'#1a1d22',borderColor:'#252830',borderWidth:1,bodyColor:'#e8e6e0',titleColor:'#6b6e78',callbacks:{label:c=>' '+c.dataset.label+': '+fmt(c.raw)}}},scales:{x:{grid:{display:false},ticks:{color:'#6b6e78',font:{family:'DM Mono',size:10}}},y:{grid:{color:'rgba(255,255,255,0.03)'},ticks:{color:'#6b6e78',font:{family:'DM Mono',size:10},callback:v=>fmtS(v)}}}}
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#6b6e78',font:{family:'DM Mono',size:10}}},tooltip:{backgroundColor:'#1a1d22',borderColor:'#252830',borderWidth:1,bodyColor:'#e8e6e0',titleColor:'#6b6e78',callbacks:{label:function(c){return ' '+c.dataset.label+': '+fmt(c.raw);}}}},scales:{x:{grid:{display:false},ticks:{color:'#6b6e78',font:{family:'DM Mono',size:10}}},y:{grid:{color:'rgba(255,255,255,0.03)'},ticks:{color:'#6b6e78',font:{family:'DM Mono',size:10},callback:function(v){return fmtS(v);}}}}}
   });
 }
 
