@@ -1260,7 +1260,7 @@ function getTotalCost(){ return assets.reduce((s,a)=>s+getAssetCost(a),0); }
 function getAssetValue(a) {
   if(a.cat==='livrets') return parseFloat(a.livretBalance||0);
   if(a.cat==='actions') return parseFloat(a.stockQty||0)*parseFloat(a.stockPrice||a.stockPRU||0);
-  if(a.cat==='crypto')  return usdToEur(parseFloat(a.cryptoQty||0)*parseFloat(a.cryptoPrice||a.cryptoDCA||0));
+  if(a.cat==='crypto')  return parseFloat(a.cryptoQty||0)*parseFloat(a.cryptoPrice||a.cryptoDCA||0);
   if(a.cat==='scpi')    return parseFloat(a.scpiParts||0)*parseFloat(a.scpiPartVal||0);
   if(a.cat==='immobilier') return parseFloat(a.immoValue||0);
   if(a.cat==='per')     return parseFloat(a.perValeur||0);
@@ -1550,7 +1550,7 @@ function renderCatTable(cat, list, total) {
   }
 
   if(cat==='crypto') {
-    return `<table class="data-table"><thead><tr><th style="padding-left:18px">Coin</th><th>Plateforme</th><th>Quantité</th><th>DCA</th><th>Cours actuel</th><th>Valeur</th><th>+/- value</th><th>Mise à jour</th><th>Actions</th></tr></thead><tbody>${list.map(a=>{
+    return `<table class="data-table"><thead><tr><th style="padding-left:18px">Coin</th><th>Plateforme</th><th>Quantité</th><th>PRU (€)</th><th>Cours actuel</th><th>Valeur</th><th>+/- value</th><th>Mise à jour</th><th>Actions</th></tr></thead><tbody>${list.map(a=>{
       const qty=parseFloat(a.cryptoQty||0), dca=parseFloat(a.cryptoDCA||0), price=parseFloat(a.cryptoPrice||dca);
       const val=qty*price, cost=qty*dca, pv=val-cost, pvPct=cost>0?(pv/cost*100):0;
       const coinName=CRYPTO_CGS[a.cryptoCoin]||a.cryptoCustomId||a.cryptoCoin||'Crypto';
@@ -4374,7 +4374,7 @@ function importCrypto() {
       note: 'Importé le 07/03/2026',
       cryptoCoin: c.coinId,
       cryptoQty: c.qty,
-      cryptoDCA: c.pru,
+      cryptoDCA: usdToEur(c.pru),
       cryptoPrice: usdToEur(c.price),
       cryptoPlatform: 'Coinbase',
       change24h: 0,
