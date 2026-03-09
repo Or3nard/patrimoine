@@ -1217,9 +1217,11 @@ function switchSubPage(sp, btn) {
 let evoC, donutC, expDonutC, incDonutC, annualBarC;
 
 function mkDonut(id, cut='70%') {
+  var existing = Chart.getChart(document.getElementById(id));
+  if (existing) existing.destroy();
   return new Chart(document.getElementById(id).getContext('2d'), {
     type:'doughnut', data:{labels:[],datasets:[{data:[],backgroundColor:[],borderWidth:0,hoverBorderWidth:2,hoverBorderColor:'#c9a84c'}]},
-    options:{responsive:true,maintainAspectRatio:false,cutout:cut,plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a1d22',borderColor:'#252830',borderWidth:1,titleColor:'#6b6e78',bodyColor:'#e8e6e0',callbacks:{label:c=>'  '+c.label+': '+fmt(c.raw)}}}}
+    options:{responsive:true,maintainAspectRatio:false,cutout:cut,plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a1d22',borderColor:'#252830',borderWidth:1,titleColor:'#6b6e78',bodyColor:'#e8e6e0',callbacks:{label:function(c){return '  '+c.label+': '+fmt(c.raw);}}}}}
   });
 }
 function initCharts() {
@@ -4743,6 +4745,7 @@ function renderCreditAmortChart(credits) {
     interetsData.push(Math.round(totalInterets));
   }
 
+  if (window._creditAmortChartInst) { window._creditAmortChartInst.destroy(); window._creditAmortChartInst = null; }
   window._creditAmortChartInst = new Chart(ctx, {
     type: 'line',
     data: {
