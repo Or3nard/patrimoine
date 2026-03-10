@@ -1073,6 +1073,469 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
 <div class="toast" id="toast"></div>
 
 <script>
+// ══════════════════════════════════════════════════════
+// DATA STORE
+// ══════════════════════════════════════════════════════
+let assets = JSON.parse(localStorage.getItem('pat3_assets') || '[]');
+let goals  = JSON.parse(localStorage.getItem('pat3_goals')  || '[]');
+let aHistory = JSON.parse(localStorage.getItem('pat3_ah')   || '[]');
+let transactions = JSON.parse(localStorage.getItem('pat3_trans') || '[]');
+
+// ══════════════════════════════════════════════════════
+// CONSTANTS & CONFIG
+// ══════════════════════════════════════════════════════
+const DB_APP_KEY   = 'fjt2q20exhqjbg5';
+const DB_REDIRECT  = window.location.origin + window.location.pathname;
+const DB_FILE      = '/DashboardPatrimoine/patrimoine.json';
+const PBKDF2_ITER  = 100000;
+const LOCK_KEY     = 'pat3_lock_hash';
+const LOCK_SALT_KEY = 'pat3_lock_salt';
+
+let _aesKey = null;
+let currentSubPage = 'actions';
+let editAssetId = null;
+let _dbToken = null;
+let _odScheduleTimer = null;
+let depView = 'mensuel';
+let navM = new Date().getMonth();
+let navY = new Date().getFullYear();
+
+// ══════════════════════════════════════════════════════
+// UTILITIES
+// ══════════════════════════════════════════════════════
+function fmt(v) {
+  if (isNaN(v) || v === null || v === undefined) return '—';
+  return new Intl.NumberFormat('fr-FR', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(v);
+}
+function fmt2(v) {
+  if (isNaN(v) || v === null) return '—';
+  return new Intl.NumberFormat('fr-FR', {style:'currency', currency:'EUR', minimumFractionDigits:2, maximumFractionDigits:2}).format(v);
+}
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtDate(d) {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return isNaN(dt) ? d : dt.toLocaleDateString('fr-FR', {day:'2-digit',month:'short',year:'numeric'});
+}
+function fmtDateFull(d) {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return isNaN(dt) ? d : dt.toLocaleDateString('fr-FR', {day:'2-digit',month:'long',year:'numeric'});
+}
+function timeSince(iso) {
+  if (!iso) return '';
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'à l\'instant';
+  if (m < 60) return 'il y a ' + m + ' min';
+  const h = Math.floor(m / 60);
+  if (h < 24) return 'il y a ' + h + 'h';
+  return 'il y a ' + Math.floor(h / 24) + 'j';
+}
+function toast(msg, dur) {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function() { el.classList.remove('show'); }, dur || 3000);
+}
+
+// ══════════════════════════════════════════════════════
+// EUR/USD
+// ══════════════════════════════════════════════════════
+async function fetchEurUsd() {
+  const CACHE_MS = 3600000;
+  if (Date.now() - _eurUsdLastFetch < CACHE_MS) return;
+  const proxies = [
+    'https://query1.finance.yahoo.com/v8/finance/chart/EURUSD=X?interval=1d&range=1d',
+    'https://query2.finance.yahoo.com/v8/finance/chart/EURUSD=X?interval=1d&range=1d'
+  ];
+  for (const url of proxies) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) continue;
+      const d = await r.json();
+      const rate = Math.abs(d?.chart?.result?.[0]?.meta?.regularMarketPrice || 0);
+      if (rate > 0.5 && rate < 2.0) {
+        _eurUsd = rate;
+        _eurUsdLastFetch = Date.now();
+        localStorage.setItem('eur_usd_rate', rate);
+        localStorage.setItem('eur_usd_ts', _eurUsdLastFetch);
+        return;
+      }
+    } catch(e) {}
+  }
+}
+function usdToEur(usd) {
+  const rate = Math.abs(_eurUsd) || 1.09;
+  return usd / rate;
+}
+
+// ══════════════════════════════════════════════════════
+// ASSET VALUE HELPERS
+// ══════════════════════════════════════════════════════
+function getAssetValue(a) {
+  switch(a.cat) {
+    case 'crypto':   return (parseFloat(a.cryptoQty)||0) * (parseFloat(a.cryptoPrice)||0);
+    case 'actions':  return (parseFloat(a.qty)||0) * (parseFloat(a.price)||0);
+    case 'livrets':  return parseFloat(a.livretSolde||a.value||0);
+    case 'per':      return parseFloat(a.perValeur||0);
+    case 'assurance-vie': return parseFloat(a.avValue||0);
+    case 'immobilier': return parseFloat(a.valeur||0);
+    case 'or':       return (parseFloat(a.metalWeight)||0) * (parseFloat(a.metalCurrentPrice||a.metalBuyPrice)||0);
+    default:         return parseFloat(a.value||a.valeur||0);
+  }
+}
+function getAssetCost(a) {
+  switch(a.cat) {
+    case 'crypto':   return (parseFloat(a.cryptoQty)||0) * (parseFloat(a.cryptoDCA||0));
+    case 'actions':  return (parseFloat(a.qty)||0) * (parseFloat(a.pru||0));
+    case 'livrets':  return parseFloat(a.livretSolde||a.value||0);
+    case 'per':      return parseFloat(a.perVersements||0);
+    case 'assurance-vie': return parseFloat(a.avCost||0);
+    case 'immobilier': return parseFloat(a.prixAchat||0);
+    case 'or':       return (parseFloat(a.metalWeight)||0) * (parseFloat(a.metalBuyPrice)||0);
+    default:         return parseFloat(a.cost||0);
+  }
+}
+function getTotalVal() {
+  return assets.reduce(function(s,a){ return s + getAssetValue(a); }, 0);
+}
+
+// ══════════════════════════════════════════════════════
+// HISTORY
+// ══════════════════════════════════════════════════════
+function pushAH(action, a) {
+  aHistory.push({
+    type: 'event', action: action, name: a.name, cat: a.cat,
+    val: getAssetValue(a), date: new Date().toISOString()
+  });
+  localStorage.setItem('pat3_ah', JSON.stringify(aHistory));
+}
+
+// ══════════════════════════════════════════════════════
+// SAVE / LOAD
+// ══════════════════════════════════════════════════════
+function saveAll() {
+  localStorage.setItem('pat3_assets', JSON.stringify(assets));
+  odScheduleAutoSave();
+  const key = new Date().toISOString().slice(0,7), total = getTotalVal();
+  if (!aHistory.find(function(h){ return h.type==='snap' && h.month===key; }) && total > 0) {
+    aHistory.push({type:'snap', month:key, val:total, date:new Date().toISOString()});
+    localStorage.setItem('pat3_ah', JSON.stringify(aHistory));
+  }
+  localStorage.setItem('pat3_lastsave', new Date().toLocaleString('fr-FR'));
+  localStorage.setItem('pat3_lastsave_ts', new Date().toISOString());
+}
+function getCredits() {
+  try { return JSON.parse(localStorage.getItem('pat3_credits') || '[]'); } catch(e) { return []; }
+}
+function getLivretRates() {
+  try { return JSON.parse(localStorage.getItem('pat3_rates') || '{}'); } catch(e) { return {}; }
+}
+function exportData() {
+  const data = {assets, goals, aHistory, transactions, credits:getCredits(), exportedAt:new Date().toISOString(), version:3};
+  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'patrimoine_' + new Date().toISOString().slice(0,10) + '.json'; a.click();
+  toast('Export téléchargé');
+}
+function importData(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const r = new FileReader();
+  r.onload = function(ev) {
+    try {
+      const d = JSON.parse(ev.target.result);
+      window._pending = d;
+      document.getElementById('importConfirmModal').classList.add('open');
+    } catch(err) { toast('Fichier invalide'); }
+  };
+  r.readAsText(file);
+}
+function confirmImport() {
+  const d = window._pending; if (!d) return;
+  if (d.assets) { assets = d.assets; localStorage.setItem('pat3_assets', JSON.stringify(assets)); }
+  if (d.goals) { goals = d.goals; localStorage.setItem('pat3_goals', JSON.stringify(goals)); }
+  if (d.aHistory) { aHistory = d.aHistory; localStorage.setItem('pat3_ah', JSON.stringify(aHistory)); }
+  if (d.transactions) { transactions = d.transactions; localStorage.setItem('pat3_trans', JSON.stringify(transactions)); }
+  window._pending = null;
+  document.getElementById('importConfirmModal').classList.remove('open');
+  buildSubNav(); renderSubPage(currentSubPage);
+  toast('Import réussi');
+}
+
+// ══════════════════════════════════════════════════════
+// SÉCURITÉ — Mot de passe + Chiffrement AES Dropbox
+// ══════════════════════════════════════════════════════
+function _hashPin(pin) {
+  return CryptoJS.SHA256(pin + 'patrimoine_salt_2026').toString();
+}
+function unlockApp() {
+  const pin = document.getElementById('lockPin').value.trim();
+  if (!pin || pin.length < 4) {
+    document.getElementById('lockError').textContent = 'Minimum 4 caractères';
+    return;
+  }
+  const stored = localStorage.getItem(LOCK_KEY);
+  const hash   = _hashPin(pin);
+  if (!stored) {
+    localStorage.setItem(LOCK_KEY, hash);
+    localStorage.setItem(LOCK_SALT_KEY, pin.length.toString());
+  } else if (stored !== hash) {
+    document.getElementById('lockError').textContent = 'Code incorrect';
+    document.getElementById('lockPin').value = '';
+    return;
+  }
+  _aesKey = pin;
+  document.getElementById('lockScreen').classList.add('hidden');
+  _migrateCryptoPrices();
+  // Load Dropbox token
+  const encTok = localStorage.getItem('pat3_db_token_enc');
+  if (encTok) {
+    try {
+      const dec = CryptoJS.AES.decrypt(encTok, _aesKey).toString(CryptoJS.enc.Utf8);
+      if (dec) { _dbToken = dec; localStorage.setItem('db_token', dec); }
+    } catch(e) {}
+  }
+  buildSubNav();
+  renderSubPage(currentSubPage);
+  fetchEurUsd().then(function() { buildSubNav(); renderSubPage(currentSubPage); });
+  fetchAllCryptoPrices();
+  fetchAllStockPrices();
+  _checkDropboxRefreshToken();
+}
+
+// Crypto PRU migration (USD→EUR)
+function _migrateCryptoPrices() {
+  if (localStorage.getItem('_pruConverted')) return;
+  const rate = Math.abs(parseFloat(localStorage.getItem('eur_usd_rate')) || 1.09);
+  if (rate < 0.5) return;
+  let changed = false;
+  assets.forEach(function(a) {
+    if (a.cat === 'crypto' && a.cryptoDCA) {
+      const dca = parseFloat(a.cryptoDCA);
+      const price = parseFloat(a.cryptoPrice || 0);
+      if (price > 0 && dca > price * rate * 0.8) {
+        a.cryptoDCA = dca / rate;
+        changed = true;
+      }
+    }
+  });
+  if (changed) {
+    localStorage.setItem('pat3_assets', JSON.stringify(assets));
+    localStorage.setItem('_pruConverted', '1');
+  } else {
+    localStorage.setItem('_pruConverted', '1');
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// DROPBOX OAUTH2 PKCE
+// ══════════════════════════════════════════════════════
+function _b64url(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+async function _sha256(plain) {
+  return crypto.subtle.digest('SHA-256', new TextEncoder().encode(plain));
+}
+async function odConnect() {
+  const verifier = _b64url(crypto.getRandomValues(new Uint8Array(32)));
+  sessionStorage.setItem('db_verifier', verifier);
+  const challenge = _b64url(await _sha256(verifier));
+  const url = 'https://www.dropbox.com/oauth2/authorize?' + new URLSearchParams({
+    client_id: DB_APP_KEY, response_type: 'code', code_challenge: challenge,
+    code_challenge_method: 'S256', token_access_type: 'offline',
+    redirect_uri: DB_REDIRECT
+  });
+  window.location = url;
+}
+async function _exchangeToken(code) {
+  const verifier = sessionStorage.getItem('db_verifier'); if (!verifier) return;
+  const r = await fetch('https://api.dropboxapi.com/oauth2/token', {
+    method: 'POST',
+    headers: {'Content-Type':'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({
+      code, grant_type:'authorization_code', client_id:DB_APP_KEY,
+      code_verifier:verifier, redirect_uri:DB_REDIRECT
+    })
+  });
+  const d = await r.json();
+  if (d.access_token) {
+    _dbToken = d.access_token;
+    localStorage.setItem('db_token', d.access_token);
+    if (_aesKey) {
+      const enc = CryptoJS.AES.encrypt(d.access_token, _aesKey).toString();
+      localStorage.setItem('pat3_db_token_enc', enc);
+    }
+    if (d.refresh_token) {
+      localStorage.setItem('db_refresh', d.refresh_token);
+    }
+    sessionStorage.removeItem('db_verifier');
+    toast('✅ Dropbox connecté !');
+    buildSubNav(); renderSubPage(currentSubPage);
+  }
+}
+async function _checkDropboxRefreshToken() {
+  const refresh = localStorage.getItem('db_refresh');
+  if (!refresh || _dbToken) return;
+  try {
+    const r = await fetch('https://api.dropboxapi.com/oauth2/token', {
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({refresh_token:refresh, grant_type:'refresh_token', client_id:DB_APP_KEY})
+    });
+    const d = await r.json();
+    if (d.access_token) {
+      _dbToken = d.access_token;
+      localStorage.setItem('db_token', d.access_token);
+      if (_aesKey) {
+        localStorage.setItem('pat3_db_token_enc', CryptoJS.AES.encrypt(d.access_token, _aesKey).toString());
+      }
+    }
+  } catch(e) {}
+}
+async function oneDriveSave() {
+  if (!_dbToken) return;
+  const data = {assets, goals, aHistory, transactions, credits:getCredits(), savedAt:new Date().toISOString()};
+  try {
+    await fetch('https://content.dropboxapi.com/2/files/upload', {
+      method:'POST',
+      headers:{
+        'Authorization':'Bearer '+_dbToken,
+        'Dropbox-API-Arg': JSON.stringify({path:DB_FILE, mode:'overwrite', autorename:false}),
+        'Content-Type':'application/octet-stream'
+      },
+      body: JSON.stringify(data)
+    });
+    const ts = new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+    const lsEl = document.getElementById('lastSaveTime');
+    if (lsEl) lsEl.textContent = ts;
+    toast('☁️ Sauvegardé sur Dropbox');
+  } catch(e) { toast('⚠ Erreur Dropbox sauvegarde'); }
+}
+async function oneDriveLoad() {
+  if (!_dbToken) { toast('⚠ Dropbox non connecté'); return; }
+  try {
+    const r = await fetch('https://content.dropboxapi.com/2/files/download', {
+      method:'POST',
+      headers:{
+        'Authorization':'Bearer '+_dbToken,
+        'Dropbox-API-Arg': JSON.stringify({path:DB_FILE})
+      }
+    });
+    if (!r.ok) { toast('⚠ Fichier Dropbox introuvable'); return; }
+    const d = await r.json();
+    const localTs = localStorage.getItem('pat3_lastsave_ts');
+    const remoteTs = d.savedAt;
+    if (localTs && remoteTs && new Date(localTs) > new Date(remoteTs)) {
+      if (!confirm('Vos données locales sont plus récentes que Dropbox. Ecraser quand même ?')) return;
+    }
+    if (d.assets) { assets = d.assets; localStorage.setItem('pat3_assets', JSON.stringify(assets)); }
+    if (d.goals) { goals = d.goals; localStorage.setItem('pat3_goals', JSON.stringify(goals)); }
+    if (d.aHistory) { aHistory = d.aHistory; localStorage.setItem('pat3_ah', JSON.stringify(aHistory)); }
+    if (d.transactions) { transactions = d.transactions; localStorage.setItem('pat3_trans', JSON.stringify(transactions)); }
+    buildSubNav(); renderSubPage(currentSubPage);
+    toast('✅ Chargé depuis Dropbox');
+  } catch(e) { toast('⚠ Erreur Dropbox chargement'); }
+}
+function odScheduleAutoSave() {
+  clearTimeout(_odScheduleTimer);
+  _odScheduleTimer = setTimeout(oneDriveSave, 10000);
+}
+function odDisconnect() {
+  _dbToken = null;
+  localStorage.removeItem('db_token'); localStorage.removeItem('db_refresh');
+  localStorage.removeItem('pat3_db_token_enc');
+  buildSubNav(); renderSubPage(currentSubPage);
+  toast('Dropbox déconnecté');
+}
+
+// ══════════════════════════════════════════════════════
+// CATEGORY ICONS & CONFIG
+// ══════════════════════════════════════════════════════
+const CAT = {
+  'actions':       {label:'Actions & ETF',  icon:'📈', color:'var(--blue)'},
+  'crypto':        {label:'Crypto',         icon:'₿',  color:'var(--gold)'},
+  'livrets':       {label:'Livrets',        icon:'🏦', color:'var(--teal)'},
+  'per':           {label:'PER',            icon:'🛡️', color:'var(--purple)'},
+  'assurance-vie': {label:'Assurance Vie',  icon:'🔰', color:'var(--green)'},
+  'immobilier':    {label:'Immobilier',     icon:'🏠', color:'var(--red)'},
+  'or':            {label:'Or & Métaux',    icon:'🥇', color:'var(--gold2)'},
+  'obligations':   {label:'Obligations',   icon:'📄', color:'var(--muted)'},
+  'autre':         {label:'Autre',          icon:'💼', color:'var(--text)'}
+};
+
+// ══════════════════════════════════════════════════════
+// PRICE FETCHING
+// ══════════════════════════════════════════════════════
+async function fetchAllCryptoPrices() {
+  const list = assets.filter(function(a){ return a.cat==='crypto'; });
+  if (!list.length) return;
+  const ids = Array.from(new Set(list.map(function(a){ return a.cryptoCoin==='custom'?a.cryptoCustomId:a.cryptoCoin; }).filter(Boolean)));
+  if (!ids.length) return;
+  try {
+    const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids='+ids.join(',')+'&vs_currencies=eur&include_24hr_change=true');
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+    list.forEach(function(a) {
+      const id = a.cryptoCoin==='custom'?a.cryptoCustomId:a.cryptoCoin;
+      if (data[id]) {
+        a.cryptoPrice = data[id].eur;
+        a.change24h = data[id].eur_24h_change;
+        a.priceUpdatedAt = new Date().toISOString();
+      }
+    });
+  } catch(e) { toast('⚠ CoinGecko indisponible — réessayez plus tard'); }
+}
+
+async function fetchAllStockPrices() {
+  const list = assets.filter(function(a){ return a.cat==='actions'; });
+  if (!list.length) return;
+  for (const a of list) {
+    if (!a.ticker) continue;
+    const proxies = [
+      'https://query1.finance.yahoo.com/v8/finance/chart/'+a.ticker+'?interval=1d&range=1d',
+      'https://query2.finance.yahoo.com/v8/finance/chart/'+a.ticker+'?interval=1d&range=1d'
+    ];
+    for (const url of proxies) {
+      try {
+        const r = await fetch(url);
+        if (!r.ok) continue;
+        const d = await r.json();
+        const price = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
+        if (price) {
+          a.price = price;
+          a.priceUpdatedAt = new Date().toISOString();
+          break;
+        }
+      } catch(e) {}
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// MODAL HELPERS
+// ══════════════════════════════════════════════════════
+function closeAssetModal() {
+  document.getElementById('assetModal').classList.remove('open');
+  editAssetId = null;
+}
+function deleteAsset(id) {
+  if (!confirm('Supprimer cet actif ?')) return;
+  const idx = assets.findIndex(function(a){ return a.id===id; });
+  if (idx >= 0) {
+    pushAH('Supprimé', assets[idx]);
+    assets.splice(idx, 1);
+    saveAll();
+    buildSubNav();
+    renderSubPage(currentSubPage);
+  }
+}
+
 var _odAccount = null; // compat guard
 let _eurUsd = Math.abs(parseFloat(localStorage.getItem('eur_usd_rate')) || 1.09); // taux EUR/USD (toujours positif)
 let _eurUsdLastFetch = parseInt(localStorage.getItem('eur_usd_ts')) || 0;
@@ -1642,3 +2105,59 @@ function renderCatTable(cat, list, total) {
         ${!assets.find(function(a){return a.id==='asset_millevie_per';}) ? `<button class="btn" style="padding:8px 16px;font-size:12px;background:rgba(180,60,60,.12);border:1px solid rgba(180,60,60,.3);color:#e88;border-radius:6px;cursor:pointer" onclick="importMilleviePER()">🏦 Importer mon Millevie PER</button>` : ''}
       </div>
       
+      ${list.map(function(a){
+        const cost=parseFloat(a.perVersements||0), val=parseFloat(a.perValeur||0);
+        const pv=val-cost, pvPct=cost>0?(pv/cost*100):0;
+        const rdt=parseFloat(a.perRendement||0);
+        const hasDetail = (a.perHoldings&&a.perHoldings.length)||(a.perStructured&&a.perStructured.length);
+        return `<div style="border:1px solid var(--border);border-radius:10px;margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--surface2);border-radius:10px 10px ${hasDetail?'0 0':'10px 10px'};cursor:pointer" onclick="(function(){var el=document.getElementById('perExpand_${a.id}'),ch=document.getElementById('perChevron_${a.id}');if(el){el.style.display=el.style.display==='none'?'block':'none';ch.textContent=el.style.display==='none'?'▶':'▼';}})()">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div class="cat-icon" style="background:${cat3.color}18;color:${cat3.color}">${cat3.icon}</div>
+              <div>
+                <div style="font-weight:600">${esc(a.name)}</div>
+                <div style="font-size:11px;color:var(--muted)">${esc(a.perGestionnaire||'')} · <span class="pill" style="font-size:9px">${perTypes[a.perType]||'PER'}</span>${a.perDepartRetraite?' · Retraite '+a.perDepartRetraite:''}</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px">
+              <div style="text-align:right">
+                <div style="font-weight:600;color:var(--gold2)">${fmt(val)}</div>
+                <div style="font-size:11px" class="change-cell ${pv>=0?'up':'down'}">${pv>=0?'+':''}${fmt(pv)} (${pvPct>=0?'+':''}${pvPct.toFixed(1)}%)</div>
+              </div>
+              <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
+                <button class="action-btn" onclick="editAsset('${a.id}')">✎</button>
+                <button class="action-btn danger" onclick="deleteAsset('${a.id}')">✕</button>
+              </div>
+              <span id="perChevron_${a.id}" style="color:var(--muted);font-size:12px">${hasDetail?'▼':'▶'}</span>
+            </div>
+          </div>
+          <div id="perExpand_${a.id}" style="display:${hasDetail?'block':'none'}">
+            <div style="padding:10px 16px">
+              <div id="perStructuredTable_${a.id}"></div>
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  // Generic fallback (obligations, autre)
+  return `<table class="data-table"><thead><tr><th style="padding-left:18px">Actif</th><th>Détail</th><th>Coût</th><th>Valeur</th><th>+/- value</th><th>Rendement</th><th>Actions</th></tr></thead><tbody>${list.map(function(a){
+    const v=getAssetValue(a), c=getAssetCost(a), pv=v-c, pvPct=c>0?(pv/c*100):0;
+    const detailMap={'assurance-vie':esc(a.avInsurer||''),'obligations':esc(a.obligEmetteur||''),'autre':esc(a.note||'')};
+    const yieldVal={'assurance-vie':a.avRate,'obligations':a.obligRate,'autre':a.yield}[cat]||0;
+    return `<tr class="data-row" onclick="editAsset('${a.id}')">
+      <td style="padding-left:18px"><div class="name-cell"><div class="cat-icon" style="background:${cat3.color}18;color:${cat3.color}">${cat3.icon}</div><div><div class="name-main">${esc(a.name)}</div><div class="name-sub">${a.date?fmtDate(a.date):'—'}</div></div></div></td>
+      <td style="color:var(--muted)">${detailMap[cat]||'—'}</td>
+      <td>${fmt(c)}</td>
+      <td style="font-weight:500">${fmt(v)}</td>
+      <td><div class="change-cell ${pv>=0?'up':'down'}">${pv>=0?'+':''}${fmt(pv)}</div><div style="font-size:10px;color:var(--muted)">${pvPct>=0?'+':''}${pvPct.toFixed(1)}%</div></td>
+      <td>${yieldVal>0?'<span style="color:var(--green)">'+yieldVal.toFixed(2)+'%</span>':'<span style="color:var(--muted)">—</span>'}</td>
+      <td><div style="display:flex;gap:5px;justify-content:flex-end" onclick="event.stopPropagation()"><button class="action-btn" onclick="editAsset('${a.id}')">✎</button><button class="action-btn danger" onclick="deleteAsset('${a.id}')">✕</button></div></td>
+    </tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+</script>
+</body>
+</html>
