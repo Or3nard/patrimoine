@@ -1627,10 +1627,21 @@ function renderCatTable(cat, list, total) {
   }
 
   if(cat==='per') {
+    const perAlready = assets.find(function(a){ return a.id==='asset_swisslife_per'; });
+    if (!perAlready) {
+      setTimeout(function(){
+        var wrap = document.getElementById('perSwisslifeBtnWrap');
+        if (wrap) wrap.style.display = 'block';
+      }, 50);
+    }
     const perTypes = {'per-individuel':'PER Individuel','per-collectif':'PERCOL','per-obligatoire':'PERO'};
     const today = new Date();
     return `<div>
-      ${list.map(a=>{
+      ${!perAlready ? `<div id="perSwisslifeBtnWrap" style="margin-bottom:12px">
+        <button class="btn" style="padding:8px 16px;font-size:12px;background:rgba(220,50,50,.12);border:1px solid rgba(220,50,50,.3);color:#e88;border-radius:6px;cursor:pointer" onclick="importSwissLifePER()">
+          🔴 Importer mon PER SwissLife
+        </button>
+      </div>` : ''}      ${list.map(a=>{
         const cost=parseFloat(a.perVersements||0), val=parseFloat(a.perValeur||0);
         const pv=val-cost, pvPct=cost>0?(pv/cost*100):0;
         const holdings = a.perHoldings||[], structured = a.perStructured||[];
@@ -3686,6 +3697,57 @@ function importSwissLife() {
   buildSubNav();
   renderSubPage('assurance-vie');
   toast('✅ SwissLife importée — 2 positions (Tempo Engie + FF Cap 2029 C)');
+}
+
+function importSwissLifePER() {
+  // Supprimer l'ancienne version si elle existe
+  assets = assets.filter(function(a){ return a.id !== 'asset_swisslife_per'; });
+  var per = {
+    id: 'asset_swisslife_per',
+    name: 'SwissLife PER Individuel',
+    cat: 'per',
+    perGestionnaire: 'Swiss Life',
+    perType: 'uc',
+    perValue: 27167.81,
+    perCost: 24000,
+    perRate: 0,
+    date: '2024-08-02',
+    note: 'Contrat n°0010793341001 · Effet 02/08/2024',
+    perStructured: [
+      {
+        name: 'Tempo mensuel Engie dividende forfaitaire 1.35',
+        isin: 'XS3033993729',
+        emetteur: 'Goldman Sachs Finance Corp International Ltd',
+        garant: 'Goldman Sachs Group (A2/BBB+/A)',
+        sousJacent: 'Indice SGEND135 (ENGIE GR -1.35pt/an)',
+        type: 'Autocall capital non protégé',
+        capitalInvesti: 25160,
+        nbParts: 25.16,
+        nominalParPart: 1000,
+        valeurActuelle: 27167.81,
+        dateEmission: '2025-09-18',
+        dateEcheance: '2037-11-30',
+        datePremierObs: '2026-11-14',
+        barriereInitiale: 100,
+        barriereEcheance: 72.5,
+        barriereCapital: 40,
+        remboursementMinAutocall: 113.2,
+        remboursementEcheanceHaut: 2584,
+        remboursementEcheanceBas: 1000,
+        decrementAnnuel: 1.35,
+        fraisEntree: 8.0,
+        fraisRecurrents: 0.80,
+        risquePRIIPs: 5,
+        rendementCible: '+7.98%'
+      }
+    ],
+    perHoldings: []
+  };
+  assets.push(per);
+  saveAll();
+  buildSubNav();
+  renderSubPage('per');
+  toast('✅ SwissLife PER importé — Tempo Engie (25.16 parts)');
 }
 function importLinxeaSpirit2(assetId) {
   var a = assets.find(function(x){ return x.id === assetId; });
