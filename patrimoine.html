@@ -4059,12 +4059,11 @@ function unlockApp() {
           _dbToken = storedTok;
         }
         document.getElementById('lockScreen').classList.add('hidden');
+        _migrateCryptoPrices(); // Migration USD→EUR si nécessaire
+        buildSubNav(); renderSubPage(currentSubPage);
         if (_dbToken) {
           localStorage.setItem('db_token', _dbToken);
           odUpdateUI(true);
-          // PAS d'auto-load — les données locales sont prioritaires
-          // L'utilisateur choisit "Charger" pour récupérer depuis Dropbox
-          // ou "Sauver" pour pousser ses données locales vers Dropbox
         }
       } else {
         _failCount++;
@@ -4858,6 +4857,36 @@ function init(){
   try { renderGlobal(); } catch(e) { console.error('renderGlobal FAIL:', e.message, e.stack); }
   try { renderMensuel(); } catch(e) { console.error('renderMensuel FAIL:', e.message, e.stack); }
   renderCredits();
+}
+
+
+// ── Migration USD→EUR pour les cryptos importées avant le fix ──────
+function _migrateCryptoPrices() {
+  var migrated = false;
+  var rate = _eurUsd || 1.09; // taux actuel EUR/USD
+  assets.forEach(function(a) {
+    if (a.cat !== 'crypto') return;
+    // Si cryptoDCA semble être en USD (pas encore converti) :
+    // Heuristique : BTC PRU > 5000 → sûrement en USD
+    // On utilise un flag pour ne migrer qu'une fois
+    if (a._pruConverted) return;
+    // Détecter si le PRU est en USD en comparant avec le cours EUR actuel
+    // Si cryptoDCA >> cryptoPrice (qui est en EUR), c'est en USD
+    var dca = parseFloat(a.cryptoDCA || 0);
+    var price = parseFloat(a.cryptoPrice || 0);
+    // Si DCA > price * rate * 0.5 → DCA est probablement en USD
+    if (dca > 0 && price > 0 && dca > price * 0.5 * rate) {
+      a.cryptoDCA = dca / rate;
+      a._pruConverted = true;
+      migrated = true;
+    } else {
+      a._pruConverted = true; // marquer comme vérifié même si pas migré
+    }
+  });
+  if (migrated) {
+    localStorage.setItem('pat3_assets', JSON.stringify(assets));
+    console.log('[Migration] PRU cryptos convertis USD→EUR');
+  }
 }
 
 try { init(); } catch(e) { console.error('INIT ERROR:', e.message, e.stack); alert('Erreur init: ' + e.message + '\n' + (e.stack||'').split('\n').slice(0,3).join('\n')); }
