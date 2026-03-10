@@ -1074,7 +1074,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
 
 <script>
 var _odAccount = null; // compat guard
-let _eurUsd = parseFloat(localStorage.getItem('eur_usd_rate')) || 1.08; // taux EUR/USD
+let _eurUsd = Math.abs(parseFloat(localStorage.getItem('eur_usd_rate')) || 1.09); // taux EUR/USD (toujours positif)
 let _eurUsdLastFetch = parseInt(localStorage.getItem('eur_usd_ts')) || 0;
 
 // ═══════════════════════════════════════════════
@@ -4420,7 +4420,7 @@ async function fetchEurUsd() {
   return _eurUsd;
 }
 
-function usdToEur(usd) { return usd / _eurUsd; }
+function usdToEur(usd) { return usd / Math.abs(_eurUsd || 1.09); }
 function fmtEur(val) { return new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:2}).format(val); }
 
 
@@ -4862,33 +4862,54 @@ function init(){
 
 // ── Migration USD→EUR pour les cryptos importées avant le fix ──────
 function _migrateCryptoPrices() {
+  // Nettoyer le taux EUR/USD si négatif en localStorage
+  var storedRate = parseFloat(localStorage.getItem('eur_usd_rate'));
+  if (storedRate < 0) {
+    storedRate = Math.abs(storedRate);
+    localStorage.setItem('eur_usd_rate', String(storedRate));
+    _eurUsd = storedRate;
+  }
+  var rate = Math.abs(_eurUsd || 1.09);
+  if (rate < 0.5 || rate > 3) rate = 1.09; // sécurité
+  
   var migrated = false;
-  var rate = _eurUsd || 1.09; // taux actuel EUR/USD
   assets.forEach(function(a) {
     if (a.cat !== 'crypto') return;
-    // Si cryptoDCA semble être en USD (pas encore converti) :
-    // Heuristique : BTC PRU > 5000 → sûrement en USD
-    // On utilise un flag pour ne migrer qu'une fois
     if (a._pruConverted) return;
-    // Détecter si le PRU est en USD en comparant avec le cours EUR actuel
-    // Si cryptoDCA >> cryptoPrice (qui est en EUR), c'est en USD
     var dca = parseFloat(a.cryptoDCA || 0);
     var price = parseFloat(a.cryptoPrice || 0);
-    // Si DCA > price * rate * 0.5 → DCA est probablement en USD
-    if (dca > 0 && price > 0 && dca > price * 0.5 * rate) {
-      a.cryptoDCA = dca / rate;
+    // Si DCA semble en USD : dca > price * rate (le PRU en USD > cours en EUR * taux)
+    // Ex: BTC dca=99985$ > BTC cours=60000€ * 1.09 = 65400 → 99985 > 65400 → OUI, convertir
+    if (dca > 0 && price > 0 && dca > price * rate * 0.8) {
+      a.cryptoDCA = parseFloat((dca / rate).toFixed(8));
       a._pruConverted = true;
       migrated = true;
+      console.log('[Migration] ' + (a.name||a.cryptoCoin) + ': ' + dca + '$ → ' + a.cryptoDCA + '€');
     } else {
-      a._pruConverted = true; // marquer comme vérifié même si pas migré
+      a._pruConverted = true;
     }
   });
   if (migrated) {
     localStorage.setItem('pat3_assets', JSON.stringify(assets));
-    console.log('[Migration] PRU cryptos convertis USD→EUR');
+    console.log('[Migration] PRU cryptos convertis USD→EUR (taux: ' + rate + ')');
   }
 }
 
+// Réinitialiser le flag de migration si le taux stocké était invalide
+(function() {
+  var sr = parseFloat(localStorage.getItem('eur_usd_rate'));
+  if (!sr || sr < 0 || sr < 0.5) {
+    // Taux invalide → forcer re-migration
+    try {
+      var a = JSON.parse(localStorage.getItem('pat3_assets') || '[]');
+      var changed = false;
+      a.forEach(function(x){ if(x._pruConverted){delete x._pruConverted; changed=true;} });
+      if(changed) localStorage.setItem('pat3_assets', JSON.stringify(a));
+    } catch(e){}
+    localStorage.removeItem('eur_usd_rate');
+    localStorage.removeItem('eur_usd_ts');
+  }
+})();
 try { init(); } catch(e) { console.error('INIT ERROR:', e.message, e.stack); alert('Erreur init: ' + e.message + '\n' + (e.stack||'').split('\n').slice(0,3).join('\n')); }
 </script>
 </body>
