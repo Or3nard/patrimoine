@@ -1741,7 +1741,13 @@ function renderCatTable(cat, list, total) {
   if(cat==='assurance-vie') {
     const avTypes = {'fonds-euro':'100% €','mixte':'Mixte','uc':'100% UC'};
     const today = new Date();
+    const swissAlready = assets.find(function(a){ return a.id==='asset_swisslife_av'; });
     return `<div>
+      ${!swissAlready ? `<div style="margin-bottom:12px">
+        <button class="btn" style="padding:8px 16px;font-size:12px;background:rgba(220,50,50,.12);border:1px solid rgba(220,50,50,.3);color:#e88;border-radius:6px;cursor:pointer" onclick="importSwissLife()">
+          🔴 Importer mes positions SwissLife
+        </button>
+      </div>` : ''}
       ${list.map(a=>{
         const cost=parseFloat(a.avCost||0), val=parseFloat(a.avValue||0);
         const pv=val-cost, pvPct=cost>0?(pv/cost*100):0;
@@ -1918,7 +1924,15 @@ async function refreshCatPrices(cat) {
   if(cat==='crypto') await fetchAllCryptoPrices();
   if(cat==='actions') await fetchAllStockPrices();
   if(cat==='per') await refreshAllPERPrices();
-  if(cat==='assurance-vie') await refreshAllAVPrices();
+  if(cat==='assurance-vie') {
+    await refreshAllAVPrices();
+    // Bouton import SwissLife si pas encore importée
+    var btnWrap = document.getElementById('swisslifeBtnWrap');
+    if (btnWrap) {
+      var alreadyImported = assets.find(function(a){ return a.id==='asset_swisslife_av'; });
+      btnWrap.style.display = alreadyImported ? 'none' : 'block';
+    }
+  }
   saveAll(); renderCatPage(cat);
   if(btn){btn.disabled=false;btn.textContent='↻ Actualiser les cours';}
 }
@@ -3503,6 +3517,53 @@ function addFromSelect(type, assetId) {
 }
 
 
+
+function importSwissLife() {
+  if (assets.find(function(a){ return a.id === 'asset_swisslife_av'; })) {
+    toast('⚠ SwissLife déjà importée — modifiez les positions directement');
+    return;
+  }
+  // Valeurs au 10/03/2026
+  var cost = (25.175 * 1000) + (49.333 * 106.38); // 25175 + 5247.4 = 30422.4
+  var av = {
+    id: 'asset_swisslife_av',
+    name: 'SwissLife — Allocation libre',
+    cat: 'assurance-vie',
+    avInsurer: 'Swiss Life',
+    avType: 'mixte',
+    avValue: 32503.09,
+    avCost: parseFloat(cost.toFixed(2)),
+    avRate: 0,
+    date: '2026-03-10',
+    note: 'Importé le 10/03/2026',
+    avStructured: [
+      {
+        name: 'Tempo mensuel Engie dividende forfaitaire 1.35 EUR nov. 2025',
+        isin: 'XS3033993729',
+        capitalInvesti: 25175,
+        valeurActuelle: 27183.52,
+        dateEcheance: '2025-11-30',
+        rendementCible: '7.98%'
+      }
+    ],
+    avHoldings: [
+      {
+        label: 'FF Cap 2029 C',
+        ticker: 'FR001400QNM3',
+        isin: 'FR001400QNM3',
+        qty: 49.333,
+        pru: 106.38,
+        prix: 107.83,
+        exchange: 'SwissLife'
+      }
+    ]
+  };
+  assets.push(av);
+  saveAll();
+  buildSubNav();
+  renderSubPage('assurance-vie');
+  toast('✅ SwissLife importée — 2 positions (Tempo Engie + FF Cap 2029 C)');
+}
 function importLinxeaSpirit2(assetId) {
   var a = assets.find(function(x){ return x.id === assetId; });
   if (!a) return;
