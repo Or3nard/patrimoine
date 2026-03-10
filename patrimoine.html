@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2026-03-07-1025 -->
+<!-- v2026-03-10-1600 -->
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -324,9 +324,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
     <button id="btnODSave"    class="btn btn-ghost" style="font-size:11px;padding:4px 12px;display:none;color:#00b4d8" onclick="oneDriveSave()">↑ Sauver</button>
     <button id="btnODLoad"    class="btn btn-ghost" style="font-size:11px;padding:4px 12px;display:none;color:#06d6a0" onclick="oneDriveLoad()">↓ Charger</button>
     <button id="btnODDisc"    class="btn btn-ghost" style="font-size:11px;padding:4px 12px;display:none;color:var(--muted)" onclick="oneDriveDisconnect()">✕ Déconnecter</button>
-  </div>
-</div>
-  </div>
+    </div>
   <div class="sync-banner-tip">
     💡 Connectez Dropbox ci-dessus pour la sauvegarde automatique
   </div>
@@ -1073,14 +1071,6 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
 <div class="toast" id="toast"></div>
 
 <script>
-// ══════════════════════════════════════════════════════
-// DATA STORE
-// ══════════════════════════════════════════════════════
-let assets = JSON.parse(localStorage.getItem('pat3_assets') || '[]');
-let goals  = JSON.parse(localStorage.getItem('pat3_goals')  || '[]');
-let aHistory = JSON.parse(localStorage.getItem('pat3_ah')   || '[]');
-let transactions = JSON.parse(localStorage.getItem('pat3_trans') || '[]');
-
 // ══════════════════════════════════════════════════════
 // CONSTANTS & CONFIG
 // ══════════════════════════════════════════════════════
@@ -2156,6 +2146,90 @@ function renderCatTable(cat, list, total) {
       <td><div style="display:flex;gap:5px;justify-content:flex-end" onclick="event.stopPropagation()"><button class="action-btn" onclick="editAsset('${a.id}')">✎</button><button class="action-btn danger" onclick="deleteAsset('${a.id}')">✕</button></div></td>
     </tr>`;
   }).join('')}</tbody></table>`;
+}
+
+// ══════════════════════════════════════════════════
+// WRAPPERS DROPBOX (compatibilité HTML onclick)
+// ══════════════════════════════════════════════════
+function oneDriveConnect()    { odConnect(); }
+function oneDriveDisconnect() { odDisconnect(); }
+
+// ══════════════════════════════════════════════════
+// IMPORT PER — SWISSLIFE
+// ══════════════════════════════════════════════════
+function importSwissLifePER() {
+  if (assets.find(function(a){ return a.id === 'asset_swisslife_per'; })) {
+    toast('ℹ️ SwissLife PER déjà importé — modifiez-le via ✎');
+    return;
+  }
+  const today = new Date().toLocaleDateString('fr-FR', {day:'2-digit',month:'long',year:'numeric'});
+  const perAsset = {
+    id: 'asset_swisslife_per',
+    name: 'PER SwissLife',
+    cat: 'per',
+    date: '',
+    perGestionnaire: 'SwissLife',
+    perType: 'per-individuel',
+    perVersements: 0,
+    perValeur: 0,
+    perPctEuro: 0,
+    perPctUC: 100,
+    perDepartRetraite: '',
+    perHoldings: [],
+    perStructured: [],
+    note: 'Importé le ' + today + ' — à compléter'
+  };
+  assets.push(perAsset);
+  saveAll();
+  pushAH('Ajouté', perAsset);
+  buildSubNav();
+  renderSubPage('per');
+  toast('✅ SwissLife PER ajouté — complétez les détails via ✎');
+}
+
+// ══════════════════════════════════════════════════
+// IMPORT PER — MILLEVIE (CAISSE D'ÉPARGNE)
+// Données au 10/03/2026 — N° PERIC020045
+// ══════════════════════════════════════════════════
+function importMilleviePER() {
+  if (assets.find(function(a){ return a.id === 'asset_millevie_per'; })) {
+    toast('ℹ️ Millevie PER déjà importé — modifiez-le via ✎');
+    return;
+  }
+  const today = new Date().toLocaleDateString('fr-FR', {day:'2-digit',month:'long',year:'numeric'});
+  const perAsset = {
+    id: 'asset_millevie_per',
+    name: "Millevie PER — Caisse d'Épargne",
+    cat: 'per',
+    date: '2021-06-08',
+    perGestionnaire: "Millevie (Caisse d'Épargne)",
+    perType: 'per-individuel',
+    perVersements: 1325.06,
+    perValeur: 1522.17,
+    perPctEuro: 0,
+    perPctUC: 100,
+    perDepartRetraite: '',
+    perHoldings: [
+      {
+        id: 'h_millevie_natixis',
+        name: 'Natixis ESG Dynamic Fund',
+        isin: 'LU2169559270',
+        ticker: '',
+        qty: 10.54868,
+        price: 144.30,
+        pru: 125.63,
+        value: 1522.17
+      }
+    ],
+    perStructured: [],
+    note: 'N° PERIC020045 · Importé le ' + today + ' · Valorisation au 10/03/2026'
+  };
+  assets.push(perAsset);
+  saveAll();
+  pushAH('Ajouté', perAsset);
+  buildSubNav();
+  renderSubPage('per');
+  toast('✅ Millevie PER importé — 1 522,17 €');
 }
 
 </script>
