@@ -3626,10 +3626,8 @@ function addFromSelect(type, assetId) {
 
 
 function importSwissLife() {
-  if (assets.find(function(a){ return a.id === 'asset_swisslife_av'; })) {
-    toast('⚠ SwissLife déjà importée — modifiez les positions directement');
-    return;
-  }
+  // Supprimer l'ancienne version si elle existe
+  assets = assets.filter(function(a){ return a.id !== 'asset_swisslife_av'; });
   // Valeurs au 10/03/2026
   // Coût réel = valeur - plus-value = 32503.09 - 6003.10 = 26499.99€
   var av = {
