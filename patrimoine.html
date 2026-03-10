@@ -2626,23 +2626,130 @@ function renderStructuredTable(type) {
   var el = document.getElementById(elId);
   if (!el) return;
   if (!arr.length) { el.innerHTML = '<div style="color:var(--muted);padding:8px 0">Aucun produit structuré</div>'; return; }
-  var rows = arr.map(function(s,i) {
-    var today=new Date(), ech=s.dateEcheance?new Date(s.dateEcheance):null;
-    var jours=ech?Math.round((ech-today)/(1000*60*60*24)):null;
-    var col=jours===null?'var(--muted)':jours<90?'var(--red)':jours<365?'var(--gold)':'var(--green)';
+  var today = new Date();
+  var html2 = arr.map(function(s, i) {
+    var ech = s.dateEcheance ? new Date(s.dateEcheance) : null;
+    var premObs = s.datePremierObs ? new Date(s.datePremierObs) : null;
+    var emis = s.dateEmission ? new Date(s.dateEmission) : null;
+    var joursEch = ech ? Math.round((ech-today)/(1000*60*60*24)) : null;
+    var joursObs = premObs ? Math.round((premObs-today)/(1000*60*60*24)) : null;
+    var colEch = joursEch===null?'var(--muted)':joursEch<365?'var(--gold)':'var(--green)';
+    var colObs = joursObs===null?'var(--muted)':joursObs<90?'var(--red)':joursObs<180?'var(--gold)':'var(--teal)';
+    var pv = (s.valeurActuelle||0) - (s.capitalInvesti||0);
+    var pvPct = s.capitalInvesti>0 ? (pv/s.capitalInvesti*100) : 0;
+    var pvCls = pv>=0 ? 'color:var(--green)' : 'color:var(--red)';
     var typeArr = type==='per' ? '_perStructured' : '_avStructured';
+    // Barrière courante dégressive
+    var barCourante = s.barriereInitiale || 100;
+    if (emis && s.barriereInitiale && s.barriereEcheance) {
+      var moisDepuis = Math.max(0, (today-emis)/(1000*60*60*24*30.44));
+      var moisTotal = 144;
+      barCourante = Math.max(s.barriereEcheance, s.barriereInitiale - (s.barriereInitiale - s.barriereEcheance)*(moisDepuis/moisTotal));
+    }
+    // Full-detail card if has extra fields, simple row otherwise
+    if (s.emetteur || s.sousJacent) {
+      return '<div style="border:1px solid rgba(201,168,76,.25);border-radius:8px;padding:12px;margin-bottom:10px;background:rgba(201,168,76,.03)">'
+        // Header
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">'
+        +   '<div>'
+        +     '<div style="font-weight:600;font-size:12px">' + esc(s.name||'—') + '</div>'
+        +     '<div style="font-size:10px;color:var(--muted);margin-top:2px">' + (s.isin||'') + ' · ' + (s.type||'Autocall') + '</div>'
+        +   '</div>'
+        +   '<div style="text-align:right">'
+        +     '<div style="font-weight:600;color:var(--teal)">' + fmt(s.valeurActuelle||0) + '</div>'
+        +     '<div style="font-size:10px;' + pvCls + '">' + (pv>=0?'+':'') + fmt(pv) + ' (' + pvPct.toFixed(2) + '%)</div>'
+        +   '</div>'
+        + '</div>'
+        // Grid infos
+        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;font-size:11px">'
+        +   '<div style="background:var(--surface2);border-radius:5px;padding:6px 8px">'
+        +     '<div style="color:var(--muted);font-size:9px;text-transform:uppercase;margin-bottom:2px">Capital investi</div>'
+        +     '<div style="font-weight:500">' + fmt(s.capitalInvesti||0) + '</div>'
+        +     '<div style="color:var(--muted);font-size:9px">' + (s.nbParts||'') + ' parts × ' + fmt(s.nominalParPart||1000) + '</div>'
+        +   '</div>'
+        +   '<div style="background:var(--surface2);border-radius:5px;padding:6px 8px">'
+        +     '<div style="color:var(--muted);font-size:9px;text-transform:uppercase;margin-bottom:2px">Garant</div>'
+        +     '<div style="font-weight:500;font-size:10px">Goldman Sachs</div>'
+        +     '<div style="color:var(--muted);font-size:9px">' + (s.garant||'') + '</div>'
+        +   '</div>'
+        +   '<div style="background:var(--surface2);border-radius:5px;padding:6px 8px">'
+        +     '<div style="color:var(--muted);font-size:9px;text-transform:uppercase;margin-bottom:2px">Sous-jacent</div>'
+        +     '<div style="font-weight:500;font-size:10px">ENGIE</div>'
+        +     '<div style="color:var(--muted);font-size:9px">' + (s.sousJacent||'') + '</div>'
+        +   '</div>'
+        +   '<div style="background:var(--surface2);border-radius:5px;padding:6px 8px">'
+        +     '<div style="color:var(--muted);font-size:9px;text-transform:uppercase;margin-bottom:2px">Décrément annuel</div>'
+        +     '<div style="font-weight:500">' + (s.decrementAnnuel||1.35) + ' pt/an</div>'
+        +     '<div style="color:var(--muted);font-size:9px">Appliqué quotidiennement</div>'
+        +   '</div>'
+        + '</div>'
+        // Barrier progress
+        + '<div style="margin-bottom:10px">'
+        +   '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;margin-bottom:5px">Barrière autocall dégressive</div>'
+        +   '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">'
+        +     '<div style="flex:1;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden">'
+        +       '<div style="height:100%;width:' + Math.min(100,barCourante) + '%;background:linear-gradient(90deg,var(--green),var(--gold));border-radius:3px"></div>'
+        +     '</div>'
+        +     '<span style="font-size:10px;font-weight:600;color:var(--gold);min-width:38px;text-align:right">' + barCourante.toFixed(1) + '%</span>'
+        +   '</div>'
+        +   '<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted)">'
+        +     '<span>Initiale : ' + (s.barriereInitiale||100) + '%</span>'
+        +     '<span>Aujourd'hui : ~' + barCourante.toFixed(1) + '%</span>'
+        +     '<span>Maturité : ' + (s.barriereEcheance||72.5) + '%</span>'
+        +   '</div>'
+        + '</div>'
+        // 3 scenarios
+        + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:10px;font-size:10px;text-align:center">'
+        +   '<div style="background:rgba(76,175,130,.1);border:1px solid rgba(76,175,130,.2);border-radius:5px;padding:6px">'
+        +     '<div style="color:var(--green);font-size:9px;margin-bottom:2px">📈 Autocall</div>'
+        +     '<div style="font-weight:600">' + (s.remboursementMinAutocall||113.2) + '%+</div>'
+        +     '<div style="color:var(--muted);font-size:9px">dès ' + (premObs?premObs.toLocaleDateString('fr-FR'):'14/11/2026') + '</div>'
+        +   '</div>'
+        +   '<div style="background:rgba(76,175,130,.06);border:1px solid rgba(76,175,130,.12);border-radius:5px;padding:6px">'
+        +     '<div style="color:var(--teal);font-size:9px;margin-bottom:2px">🎯 Maturité ≥72.5%</div>'
+        +     '<div style="font-weight:600">' + fmt(s.remboursementEcheanceHaut||2584) + '</div>'
+        +     '<div style="color:var(--muted);font-size:9px">par part</div>'
+        +   '</div>'
+        +   '<div style="background:rgba(224,92,92,.08);border:1px solid rgba(224,92,92,.15);border-radius:5px;padding:6px">'
+        +     '<div style="color:var(--red);font-size:9px;margin-bottom:2px">🛡️ Protection ≥40%</div>'
+        +     '<div style="font-weight:600">' + fmt(s.remboursementEcheanceBas||1000) + '</div>'
+        +     '<div style="color:var(--muted);font-size:9px">capital garanti/part</div>'
+        +   '</div>'
+        + '</div>'
+        // Dates footer
+        + '<div style="display:flex;justify-content:space-between;font-size:10px;padding-top:8px;border-top:1px solid var(--border)">'
+        +   '<div><span style="color:var(--muted)">1ère obs. : </span><span style="color:' + colObs + ';font-weight:500">' + (premObs?premObs.toLocaleDateString('fr-FR'):'—') + '</span>' + (joursObs!==null?' <span style="color:var(--muted);font-size:9px">(dans '+joursObs+'j)</span>':'') + '</div>'
+        +   '<div><span style="color:var(--muted)">Échéance max : </span><span style="color:' + colEch + ';font-weight:500">' + (ech?ech.toLocaleDateString('fr-FR'):'—') + '</span></div>'
+        + '</div>'
+        + '<div style="display:flex;gap:8px;margin-top:6px;font-size:9px;color:var(--muted)">'
+        +   '<span>⚠️ PRIIPs ' + (s.risquePRIIPs||5) + '/7</span><span>·</span>'
+        +   '<span>Frais entrée : ' + (s.fraisEntree||8) + '%</span><span>·</span>'
+        +   '<span>Récurrents : ' + (s.fraisRecurrents||0.8) + '%/an</span><span>·</span>'
+        +   '<span>Capital non protégé si ENGIE < 40%</span>'
+        + '</div>'
+        + '<div style="margin-top:8px;text-align:right">'
+        +   '<button type="button" class="action-btn danger" onclick="deleteStructuredRow(\'' + type + '\',' + i + ')">✕ Supprimer</button>'
+        + '</div>'
+        + '</div>';
+    }
+    // Simple row for PER or basic structured
+    var colBasic = joursEch===null?'var(--muted)':joursEch<90?'var(--red)':joursEch<365?'var(--gold)':'var(--green)';
     return '<tr style="border-top:1px solid var(--border)">'
       + '<td style="padding:4px 6px"><input class="form-input" style="padding:3px 6px;font-size:11px;width:130px" value="'+esc(s.name||'')+'" placeholder="Nom" oninput="'+typeArr+'['+i+'].name=this.value"></td>'
       + '<td style="padding:4px 6px"><input class="form-input" style="padding:3px 6px;font-size:11px;width:80px;text-align:right" type="number" value="'+(s.capitalInvesti||'')+'" placeholder="0" oninput="'+typeArr+'['+i+'].capitalInvesti=parseFloat(this.value)||0;calcPERValue()"></td>'
       + '<td style="padding:4px 6px"><input class="form-input" style="padding:3px 6px;font-size:11px;width:80px;text-align:right" type="number" value="'+(s.valeurActuelle||'')+'" placeholder="0" oninput="'+typeArr+'['+i+'].valeurActuelle=parseFloat(this.value)||0;calcPERValue()"></td>'
-      + '<td style="padding:4px 6px;color:'+col+'">'+(ech?ech.toLocaleDateString("fr-FR"):"—")+(jours!==null?"<div style='font-size:9px'>"+(jours>0?jours+"j":"Échu")+"</div>":"")+"</td>"
-      + '<td style="padding:4px 6px">'+(s.rendementCible?s.rendementCible+"%":"—")+'</td>'
-      + '<td><button type="button" class="action-btn danger" onclick="deleteStructuredRow(\'' + type + '\''  + ',' + i + ')">\u2715</button></td>'
+      + '<td style="padding:4px 6px;color:'+colBasic+'">'+(ech?ech.toLocaleDateString('fr-FR'):'—')+(joursEch!==null?'<div style="font-size:9px">'+(joursEch>0?joursEch+'j':'Échu')+'</div>':'')+'</td>'
+      + '<td style="padding:4px 6px">'+(s.rendementCible?s.rendementCible+'%':'—')+'</td>'
+      + '<td><button type="button" class="action-btn danger" onclick="deleteStructuredRow(\'' + type + '\',' + i + ')">✕</button></td>'
       + '</tr>';
-  }).join('');
-  el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:11px">'
-    + '<thead><tr style="color:var(--muted);font-size:10px"><th style="padding:4px 6px;text-align:left">Nom</th><th style="padding:4px 6px;text-align:right">Capital</th><th style="padding:4px 6px;text-align:right">Valeur</th><th style="padding:4px 6px;text-align:right">Échéance</th><th style="padding:4px 6px;text-align:right">Cible</th><th></th></tr></thead>'
-    + '<tbody>' + rows + '</tbody></table>';
+  });
+  // Wrap simple rows in table if any
+  var hasCards = arr.some(function(s){ return s.emetteur||s.sousJacent; });
+  if (hasCards) {
+    el.innerHTML = html2.join('');
+  } else {
+    el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="color:var(--muted);font-size:10px"><th style="padding:4px 8px;text-align:left">Nom</th><th style="padding:4px 8px;text-align:right">Capital</th><th style="padding:4px 8px;text-align:right">Valeur</th><th style="padding:4px 8px;text-align:right">Échéance</th><th style="padding:4px 8px;text-align:right">Cible</th><th></th></tr></thead><tbody>' + html2.join('') + '</tbody></table>';
+  }
 }
 
 // ── Ticker Autocomplete ──
@@ -3524,26 +3631,44 @@ function importSwissLife() {
     return;
   }
   // Valeurs au 10/03/2026
-  var cost = (25.175 * 1000) + (49.333 * 106.38); // 25175 + 5247.4 = 30422.4
+  // Coût réel = valeur - plus-value = 32503.09 - 6003.10 = 26499.99€
   var av = {
     id: 'asset_swisslife_av',
-    name: 'SwissLife — Allocation libre',
+    name: 'SwissLife Strategic Premium',
     cat: 'assurance-vie',
     avInsurer: 'Swiss Life',
     avType: 'mixte',
     avValue: 32503.09,
-    avCost: parseFloat(cost.toFixed(2)),
+    avCost: 26499.99,
     avRate: 0,
-    date: '2026-03-10',
-    note: 'Importé le 10/03/2026',
+    date: '2024-07-25',
+    note: 'Contrat n°0010791382001 · Effet 25/07/2024',
     avStructured: [
       {
-        name: 'Tempo mensuel Engie dividende forfaitaire 1.35 EUR nov. 2025',
+        name: 'Tempo mensuel Engie dividende forfaitaire 1.35',
         isin: 'XS3033993729',
+        emetteur: 'Goldman Sachs Finance Corp International Ltd',
+        garant: 'Goldman Sachs Group (A2/BBB+/A)',
+        sousJacent: 'Indice SGEND135 (ENGIE GR -1.35pt/an)',
+        type: 'Autocall capital non protégé',
         capitalInvesti: 25175,
+        nbParts: 25.175,
+        nominalParPart: 1000,
         valeurActuelle: 27183.52,
-        dateEcheance: '2025-11-30',
-        rendementCible: '7.98%'
+        dateEmission: '2025-09-18',
+        dateEcheance: '2037-11-30',
+        datePremierObs: '2026-11-14',
+        barriereInitiale: 100,
+        barriereEcheance: 72.5,
+        barriereCapital: 40,
+        remboursementMinAutocall: 113.2,
+        remboursementEcheanceHaut: 2584,
+        remboursementEcheanceBas: 1000,
+        decrementAnnuel: 1.35,
+        fraisEntree: 8.0,
+        fraisRecurrents: 0.80,
+        risquePRIIPs: 5,
+        rendementCible: '+7.98%'
       }
     ],
     avHoldings: [
