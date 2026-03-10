@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2026-03-10-1600 -->
+<!-- v2026-03-10-1615 -->
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -324,7 +324,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
     <button id="btnODSave"    class="btn btn-ghost" style="font-size:11px;padding:4px 12px;display:none;color:#00b4d8" onclick="oneDriveSave()">↑ Sauver</button>
     <button id="btnODLoad"    class="btn btn-ghost" style="font-size:11px;padding:4px 12px;display:none;color:#06d6a0" onclick="oneDriveLoad()">↓ Charger</button>
     <button id="btnODDisc"    class="btn btn-ghost" style="font-size:11px;padding:4px 12px;display:none;color:var(--muted)" onclick="oneDriveDisconnect()">✕ Déconnecter</button>
-    </div>
+  </div>
   <div class="sync-banner-tip">
     💡 Connectez Dropbox ci-dessus pour la sauvegarde automatique
   </div>
@@ -1082,13 +1082,8 @@ const LOCK_KEY     = 'pat3_lock_hash';
 const LOCK_SALT_KEY = 'pat3_lock_salt';
 
 let _aesKey = null;
-let currentSubPage = 'actions';
-let editAssetId = null;
 let _dbToken = null;
 let _odScheduleTimer = null;
-let depView = 'mensuel';
-let navM = new Date().getMonth();
-let navY = new Date().getFullYear();
 
 // ══════════════════════════════════════════════════════
 // UTILITIES
