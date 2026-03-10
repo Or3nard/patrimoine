@@ -1641,6 +1641,10 @@ function renderCatTable(cat, list, total) {
         <button class="btn" style="padding:8px 16px;font-size:12px;background:rgba(220,50,50,.12);border:1px solid rgba(220,50,50,.3);color:#e88;border-radius:6px;cursor:pointer" onclick="importSwissLifePER()">
           🔴 Importer mon PER SwissLife
         </button>
+        ${!assets.find(function(a){return a.id==='asset_millevie_per';}) ? `
+        <button class="btn" style="margin-left:8px;padding:8px 16px;font-size:12px;background:rgba(200,30,30,.12);border:1px solid rgba(200,30,30,.3);color:#e88;border-radius:6px;cursor:pointer" onclick="importMilleviePER()">
+          🏦 Importer mon Millevie PER (Caisse d'Epargne)
+        </button>` : ''}
       </div>` : ''}      ${list.map(a=>{
         const cost=parseFloat(a.perVersements||0), val=parseFloat(a.perValeur||0);
         const pv=val-cost, pvPct=cost>0?(pv/cost*100):0;
@@ -3699,6 +3703,40 @@ function importSwissLife() {
   toast('✅ SwissLife importée — 2 positions (Tempo Engie + FF Cap 2029 C)');
 }
 
+
+function importMilleviePER() {
+  assets = assets.filter(function(a){ return a.id !== 'asset_millevie_per'; });
+  assets.push({
+    id: 'asset_millevie_per',
+    name: 'Millevie PER',
+    cat: 'per',
+    perGestionnaire: 'Caisse d'Epargne',
+    perType: 'uc',
+    perValeur: 1522.17,
+    perVersements: 1325.06,
+    perDepartRetraite: 2056,
+    perPctEuro: 0,
+    perPctUC: 100,
+    date: '2021-06-08',
+    note: 'Contrat n°PERIC020045 · Ouvert le 8 juin 2021',
+    perStructured: [],
+    perHoldings: [
+      {
+        label: 'Natixis ESG Dynamic Fund',
+        ticker: 'LU2169559270',
+        isin: 'LU2169559270',
+        qty: 10.54868,
+        pru: 125.61,
+        prix: 144.30,
+        exchange: 'Caisse d'Epargne'
+      }
+    ]
+  });
+  saveAll();
+  buildSubNav();
+  renderSubPage('per');
+  toast('✅ Millevie PER importé — Natixis ESG Dynamic Fund');
+}
 function importSwissLifePER() {
   // Supprimer l'ancienne version si elle existe
   assets = assets.filter(function(a){ return a.id !== 'asset_swisslife_per'; });
