@@ -1136,38 +1136,11 @@ async function fetchEurUsd() {
   const CACHE_MS = 3600000;
   if (Date.now() - _eurUsdLastFetch < CACHE_MS) return;
   const sources = [
-    async () => {
-      const r = await fetch('https://api.frankfurter.app/latest?from=EUR&to=USD');
-      if (!r.ok) throw new Error();
-      const d = await r.json();
-      const rate = d?.rates?.USD;
-      if (rate > 0.5 && rate < 2.0) return rate;
-      throw new Error();
-    },
-    async () => {
-      const r = await fetch('https://open.er-api.com/v6/latest/EUR');
-      if (!r.ok) throw new Error();
-      const d = await r.json();
-      const rate = d?.rates?.USD;
-      if (rate > 0.5 && rate < 2.0) return rate;
-      throw new Error();
-    },
-    async () => {
-      const cached = parseFloat(localStorage.getItem('eur_usd_rate'));
-      if (cached > 0.5 && cached < 2.0) return cached;
-      return 1.09;
-    }
+    async () => { const r=await fetch('https://api.frankfurter.app/latest?from=EUR&to=USD'); if(!r.ok)throw 0; const d=await r.json(); const rate=d?.rates?.USD; if(rate>0.5&&rate<2.0)return rate; throw 0; },
+    async () => { const r=await fetch('https://open.er-api.com/v6/latest/EUR'); if(!r.ok)throw 0; const d=await r.json(); const rate=d?.rates?.USD; if(rate>0.5&&rate<2.0)return rate; throw 0; },
+    async () => { const c=parseFloat(localStorage.getItem('eur_usd_rate')); return(c>0.5&&c<2.0)?c:1.09; }
   ];
-  for (const source of sources) {
-    try {
-      const rate = await source();
-      _eurUsd = rate;
-      _eurUsdLastFetch = Date.now();
-      localStorage.setItem('eur_usd_rate', rate);
-      localStorage.setItem('eur_usd_ts', _eurUsdLastFetch);
-      return;
-    } catch(e) {}
-  }
+  for(const s of sources){try{const rate=await s();_eurUsd=rate;_eurUsdLastFetch=Date.now();localStorage.setItem('eur_usd_rate',rate);localStorage.setItem('eur_usd_ts',_eurUsdLastFetch);return;}catch(e){}}
 }
 function usdToEur(usd) {
   const rate = Math.abs(_eurUsd) || 1.09;
@@ -1292,39 +1265,18 @@ function unlockApp() {
   _aesKey = pin;
   document.getElementById('lockScreen').classList.add('hidden');
   _migrateCryptoPrices();
-  // Load Dropbox token (déchiffré avec le PIN)
   const encTok = localStorage.getItem('pat3_db_token_enc');
-  if (encTok) {
-    try {
-      const dec = CryptoJS.AES.decrypt(encTok, _aesKey).toString(CryptoJS.enc.Utf8);
-      if (dec && dec.length > 10) { _dbToken = dec; localStorage.setItem('db_token', dec); }
-    } catch(e) {}
-  }
-  // Fallback: token non chiffré (après reset PIN)
-  if (!_dbToken) {
-    const rawTok = localStorage.getItem('db_token');
-    if (rawTok && rawTok.length > 10) _dbToken = rawTok;
-  }
+  if (encTok) { try { const dec=CryptoJS.AES.decrypt(encTok,_aesKey).toString(CryptoJS.enc.Utf8); if(dec&&dec.length>10){_dbToken=dec;localStorage.setItem('db_token',dec);} } catch(e) {} }
+  if (!_dbToken) { const rawTok=localStorage.getItem('db_token'); if(rawTok&&rawTok.length>10)_dbToken=rawTok; }
   updateSyncBanner();
   buildSubNav();
   renderSubPage(currentSubPage);
   fetchEurUsd().then(function() { buildSubNav(); renderSubPage(currentSubPage); });
   fetchAllCryptoPrices();
   fetchAllStockPrices();
-  // Gestion callback OAuth Dropbox (code en attente après redirection)
-  const _pendingCode = sessionStorage.getItem('db_pending_code');
-  if (_pendingCode) {
-    sessionStorage.removeItem('db_pending_code');
-    _exchangeToken(_pendingCode).then(function() {
-      updateSyncBanner();
-      buildSubNav();
-      renderSubPage(currentSubPage);
-    });
-  } else {
-    _checkDropboxRefreshToken().then(function() {
-      updateSyncBanner();
-    }).catch(function() {});
-  }
+  const _pendingCode=sessionStorage.getItem('db_pending_code');
+  if(_pendingCode){sessionStorage.removeItem('db_pending_code');_exchangeToken(_pendingCode).then(function(){updateSyncBanner();buildSubNav();renderSubPage(currentSubPage);});}
+  else{_checkDropboxRefreshToken().then(function(){updateSyncBanner();}).catch(function(){});}
 }
 
 // Crypto PRU migration (USD→EUR)
@@ -1552,27 +1504,10 @@ let _eurUsdLastFetch = parseInt(localStorage.getItem('eur_usd_ts')) || 0;
 // générés dynamiquement (innerHTML), Safari-safe
 // ═══════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', function() {
-  // Keyup on quick search inputs
-  document.addEventListener('keyup', function(e) {
-    var el = e.target;
-    if (el && el.dataset && el.dataset.quicktype) {
-      filterQuickList(el.dataset.quicktype, el.dataset.quickid, el.value);
-    }
-  });
-  // Also handle input event as fallback
-  document.addEventListener('input', function(e) {
-    var el = e.target;
-    if (el && el.dataset && el.dataset.quicktype) {
-      filterQuickList(el.dataset.quicktype, el.dataset.quickid, el.value);
-    }
-  });
-  // Dropbox OAuth callback: capturer ?code= avant affichage du PIN
-  const _up = new URLSearchParams(window.location.search);
-  const _oc = _up.get('code');
-  if (_oc) {
-    sessionStorage.setItem('db_pending_code', _oc);
-    window.history.replaceState({}, document.title, window.location.pathname);
-  }
+  document.addEventListener('keyup', function(e){var el=e.target;if(el&&el.dataset&&el.dataset.quicktype){filterQuickList(el.dataset.quicktype,el.dataset.quickid,el.value);}});
+  document.addEventListener('input',  function(e){var el=e.target;if(el&&el.dataset&&el.dataset.quicktype){filterQuickList(el.dataset.quicktype,el.dataset.quickid,el.value);}});
+  const _oc=new URLSearchParams(window.location.search).get('code');
+  if(_oc){sessionStorage.setItem('db_pending_code',_oc);window.history.replaceState({},'',window.location.pathname);}
 });
 // ══════════════════════════════════════════════════
 // DATA
@@ -2145,8 +2080,50 @@ function renderCatTable(cat, list, total) {
             </div>
           </div>
           <div id="perExpand_${a.id}" style="display:${hasDetail?'block':'none'}">
-            <div style="padding:10px 16px">
-              <div id="perStructuredTable_${a.id}"></div>
+            <div style="padding:12px 16px">
+              ${(a.perHoldings&&a.perHoldings.length)?`<div style="font-size:10px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Unités de Compte</div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);font-size:10px"><th style="text-align:left;padding:4px 8px;font-weight:400">Fonds</th><th style="text-align:left;padding:4px 8px;font-weight:400">ISIN</th><th style="text-align:right;padding:4px 8px;font-weight:400">Qté</th><th style="text-align:right;padding:4px 8px;font-weight:400">Prix</th><th style="text-align:right;padding:4px 8px;font-weight:400">PRU</th><th style="text-align:right;padding:4px 8px;font-weight:400">Valeur</th><th style="text-align:right;padding:4px 8px;font-weight:400">+/-</th></tr></thead><tbody>${a.perHoldings.map(function(h){const hv=(parseFloat(h.qty)||0)*(parseFloat(h.price)||0);const hc=(parseFloat(h.qty)||0)*(parseFloat(h.pru)||parseFloat(h.price)||0);const hpv=hv-hc,hpvp=hc>0?(hpv/hc*100):0;return `<tr style="border-top:1px solid var(--border)"><td style="padding:6px 8px;font-weight:500">${esc(h.name||'—')}</td><td style="padding:6px 8px;font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">${esc(h.isin||'—')}</td><td style="padding:6px 8px;text-align:right">${(parseFloat(h.qty)||0).toFixed(5)}</td><td style="padding:6px 8px;text-align:right">${fmt2(parseFloat(h.price)||0)}</td><td style="padding:6px 8px;text-align:right;color:var(--muted)">${fmt2(parseFloat(h.pru)||0)}</td><td style="padding:6px 8px;text-align:right;font-weight:600;color:var(--gold2)">${fmt(hv)}</td><td style="padding:6px 8px;text-align:right" class="change-cell ${hpv>=0?'up':'down'}">${hpv>=0?'+':''}${fmt(hpv)} (${hpvp>=0?'+':''}${hpvp.toFixed(1)}%)</td></tr>`;}).join('')}</tbody></table>`:''}
+              ${(a.perStructured&&a.perStructured.length)?`<div style="font-size:10px;color:var(--muted);margin:12px 0 8px;text-transform:uppercase;letter-spacing:.5px">Produits Structurés</div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);font-size:10px"><th style="text-align:left;padding:4px 8px;font-weight:400">Produit</th><th style="text-align:right;padding:4px 8px;font-weight:400">Valeur</th><th style="text-align:right;padding:4px 8px;font-weight:400">Échéance</th></tr></thead><tbody>${a.perStructured.map(function(s){return `<tr style="border-top:1px solid var(--border)"><td style="padding:6px 8px">${esc(s.name||'—')}</td><td style="padding:6px 8px;text-align:right;color:var(--gold2)">${fmt(s.valeur||0)}</td><td style="padding:6px 8px;text-align:right;color:var(--muted)">${s.echeance||'—'}</td></tr>`;}).join('')}</tbody></table>`:''}
+              ${!hasDetail?'<div style="color:var(--muted);font-size:11px;padding:4px 0">Aucun détail — modifiez via ✎</div>':''}
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  // Assurance-Vie : cartes avec holdings
+  if(cat==='assurance-vie') {
+    const avTypes = {'fonds-euro':'Fonds euro','uc':'UC','mixte':'Mixte','per-av':'PER AV'};
+    return `<div>
+      ${list.map(function(a){
+        const avc=parseFloat(a.avCost||0),avv=parseFloat(a.avValue||0),avpv=avv-avc,avpvp=avc>0?(avpv/avc*100):0;
+        const avHasD=(a.avHoldings&&a.avHoldings.length)||(a.avStructured&&a.avStructured.length);
+        return `<div style="border:1px solid var(--border);border-radius:10px;margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--surface2);border-radius:10px 10px ${avHasD?'0 0':'10px 10px'};cursor:pointer" onclick="(function(){var el=document.getElementById('avExpand_${a.id}'),ch=document.getElementById('avChevron_${a.id}');if(el){el.style.display=el.style.display==='none'?'block':'none';ch.textContent=el.style.display==='none'?'▶':'▼';}})()">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div class="cat-icon" style="background:${cat3.color}18;color:${cat3.color}">${cat3.icon}</div>
+              <div>
+                <div style="font-weight:600">${esc(a.name)}</div>
+                <div style="font-size:11px;color:var(--muted)">${esc(a.avInsurer||'')} · <span class="pill" style="font-size:9px">${avTypes[a.avType]||'AV'}</span>${a.date?' · Depuis '+fmtDate(a.date):''}</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px">
+              <div style="text-align:right">
+                <div style="font-weight:600;color:var(--gold2)">${fmt(avv)}</div>
+                <div style="font-size:11px" class="change-cell ${avpv>=0?'up':'down'}">${avpv>=0?'+':''}${fmt(avpv)} (${avpvp>=0?'+':''}${avpvp.toFixed(1)}%)</div>
+              </div>
+              <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
+                <button class="action-btn" onclick="editAsset('${a.id}')">✎</button>
+                <button class="action-btn danger" onclick="deleteAsset('${a.id}')">✕</button>
+              </div>
+              <span id="avChevron_${a.id}" style="color:var(--muted);font-size:12px">${avHasD?'▼':'▶'}</span>
+            </div>
+          </div>
+          <div id="avExpand_${a.id}" style="display:${avHasD?'block':'none'}">
+            <div style="padding:12px 16px">
+              ${(a.avHoldings&&a.avHoldings.length)?`<div style="font-size:10px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Unités de Compte</div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);font-size:10px"><th style="text-align:left;padding:4px 8px;font-weight:400">Fonds</th><th style="text-align:left;padding:4px 8px;font-weight:400">ISIN</th><th style="text-align:right;padding:4px 8px;font-weight:400">Qté</th><th style="text-align:right;padding:4px 8px;font-weight:400">Prix</th><th style="text-align:right;padding:4px 8px;font-weight:400">PRU</th><th style="text-align:right;padding:4px 8px;font-weight:400">Valeur</th><th style="text-align:right;padding:4px 8px;font-weight:400">+/-</th></tr></thead><tbody>${a.avHoldings.map(function(h){const hv2=(parseFloat(h.qty)||0)*(parseFloat(h.price)||0);const hc2=(parseFloat(h.qty)||0)*(parseFloat(h.pru)||parseFloat(h.price)||0);const hpv2=hv2-hc2,hpvp2=hc2>0?(hpv2/hc2*100):0;return `<tr style="border-top:1px solid var(--border)"><td style="padding:6px 8px;font-weight:500">${esc(h.name||'—')}</td><td style="padding:6px 8px;font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">${esc(h.isin||'—')}</td><td style="padding:6px 8px;text-align:right">${(parseFloat(h.qty)||0).toFixed(5)}</td><td style="padding:6px 8px;text-align:right">${fmt2(parseFloat(h.price)||0)}</td><td style="padding:6px 8px;text-align:right;color:var(--muted)">${fmt2(parseFloat(h.pru)||0)}</td><td style="padding:6px 8px;text-align:right;font-weight:600;color:var(--gold2)">${fmt(hv2)}</td><td style="padding:6px 8px;text-align:right" class="change-cell ${hpv2>=0?'up':'down'}">${hpv2>=0?'+':''}${fmt(hpv2)} (${hpvp2>=0?'+':''}${hpvp2.toFixed(1)}%)</td></tr>`;}).join('')}</tbody></table>`:''}
+              ${(a.avStructured&&a.avStructured.length)?`<div style="font-size:10px;color:var(--muted);margin:12px 0 8px;text-transform:uppercase;letter-spacing:.5px">Produits Structurés</div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);font-size:10px"><th style="text-align:left;padding:4px 8px;font-weight:400">Produit</th><th style="text-align:right;padding:4px 8px;font-weight:400">Valeur</th><th style="text-align:right;padding:4px 8px;font-weight:400">Échéance</th></tr></thead><tbody>${a.avStructured.map(function(s){return `<tr style="border-top:1px solid var(--border)"><td style="padding:6px 8px">${esc(s.name||'—')}</td><td style="padding:6px 8px;text-align:right;color:var(--gold2)">${fmt(s.valeur||0)}</td><td style="padding:6px 8px;text-align:right;color:var(--muted)">${s.echeance||'—'}</td></tr>`;}).join('')}</tbody></table>`:''}
+              ${!avHasD?'<div style="color:var(--muted);font-size:11px;padding:4px 0">Aucun holding renseigné — modifiez via ✎</div>':''}
             </div>
           </div>
         </div>`;
@@ -2979,12 +2956,21 @@ function _renderAnnuel(){
 function importSwissLifePER(){
   if(assets.find(a=>a.id==='asset_swisslife_per')){toast('ℹ️ SwissLife PER déjà importé');return;}
   const today=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
-  assets.push({id:'asset_swisslife_per',name:'PER SwissLife',cat:'per',date:'',
-    perGestionnaire:'SwissLife',perType:'per-individuel',perVersements:0,perValeur:0,
-    perPctEuro:0,perPctUC:100,perDepartRetraite:'',perHoldings:[],perStructured:[],
-    note:'Importé le '+today+' — à compléter'});
+  assets.push({id:'asset_swisslife_per',name:'SwissLife PER Individuel',cat:'per',
+    date:'2024-08-02',perGestionnaire:'Swiss Life',perType:'per-individuel',
+    perVersements:24000,perValeur:27167.81,
+    perPctEuro:0,perPctUC:100,perDepartRetraite:'2060',
+    perHoldings:[{
+      id:'h_swisslife_tempo_engie',
+      name:'Tempo mensuel Engie dividende forfaitaire 1.35 EUR nov. 2025',
+      isin:'XS3033993729',ticker:'',
+      qty:25.16,price:1079.80,pru:1000.00,
+      value:27167.81
+    }],
+    perStructured:[],
+    note:'N° 00107933341001 · Importé le '+today+' · Valorisation au 06/03/2026'});
   saveAll();pushAH('Ajouté',assets[assets.length-1]);buildSubNav();renderSubPage('per');
-  toast('✅ SwissLife PER ajouté');
+  toast('✅ SwissLife PER importé — 27 167,81 €');
 }
 function importMilleviePER(){
   if(assets.find(a=>a.id==='asset_millevie_per')){toast('ℹ️ Millevie PER déjà importé');return;}
