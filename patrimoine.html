@@ -1135,23 +1135,41 @@ function toast(msg, dur) {
 async function fetchEurUsd() {
   const CACHE_MS = 3600000;
   if (Date.now() - _eurUsdLastFetch < CACHE_MS) return;
-  const proxies = [
-    'https://query1.finance.yahoo.com/v8/finance/chart/EURUSD=X?interval=1d&range=1d',
-    'https://query2.finance.yahoo.com/v8/finance/chart/EURUSD=X?interval=1d&range=1d'
-  ];
-  for (const url of proxies) {
-    try {
-      const r = await fetch(url);
-      if (!r.ok) continue;
+  // Sources CORS-compatibles avec GitHub Pages
+  const sources = [
+    // Frankfurter (Banque centrale européenne) — CORS ouvert
+    async () => {
+      const r = await fetch('https://api.frankfurter.app/latest?from=EUR&to=USD');
+      if (!r.ok) throw new Error();
       const d = await r.json();
-      const rate = Math.abs(d?.chart?.result?.[0]?.meta?.regularMarketPrice || 0);
-      if (rate > 0.5 && rate < 2.0) {
-        _eurUsd = rate;
-        _eurUsdLastFetch = Date.now();
-        localStorage.setItem('eur_usd_rate', rate);
-        localStorage.setItem('eur_usd_ts', _eurUsdLastFetch);
-        return;
-      }
+      const rate = d?.rates?.USD;
+      if (rate > 0.5 && rate < 2.0) return rate;
+      throw new Error();
+    },
+    // ExchangeRate-API (tier gratuit, CORS ouvert)
+    async () => {
+      const r = await fetch('https://open.er-api.com/v6/latest/EUR');
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      const rate = d?.rates?.USD;
+      if (rate > 0.5 && rate < 2.0) return rate;
+      throw new Error();
+    },
+    // Fallback statique si toutes les sources échouent
+    async () => {
+      const cached = parseFloat(localStorage.getItem('eur_usd_rate'));
+      if (cached > 0.5 && cached < 2.0) return cached;
+      return 1.09; // valeur par défaut raisonnable
+    }
+  ];
+  for (const source of sources) {
+    try {
+      const rate = await source();
+      _eurUsd = rate;
+      _eurUsdLastFetch = Date.now();
+      localStorage.setItem('eur_usd_rate', rate);
+      localStorage.setItem('eur_usd_ts', _eurUsdLastFetch);
+      return;
     } catch(e) {}
   }
 }
