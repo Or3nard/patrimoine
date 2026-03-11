@@ -1135,9 +1135,7 @@ function toast(msg, dur) {
 async function fetchEurUsd() {
   const CACHE_MS = 3600000;
   if (Date.now() - _eurUsdLastFetch < CACHE_MS) return;
-  // Sources CORS-compatibles avec GitHub Pages
   const sources = [
-    // Frankfurter (Banque centrale européenne) — CORS ouvert
     async () => {
       const r = await fetch('https://api.frankfurter.app/latest?from=EUR&to=USD');
       if (!r.ok) throw new Error();
@@ -1146,7 +1144,6 @@ async function fetchEurUsd() {
       if (rate > 0.5 && rate < 2.0) return rate;
       throw new Error();
     },
-    // ExchangeRate-API (tier gratuit, CORS ouvert)
     async () => {
       const r = await fetch('https://open.er-api.com/v6/latest/EUR');
       if (!r.ok) throw new Error();
@@ -1155,11 +1152,10 @@ async function fetchEurUsd() {
       if (rate > 0.5 && rate < 2.0) return rate;
       throw new Error();
     },
-    // Fallback statique si toutes les sources échouent
     async () => {
       const cached = parseFloat(localStorage.getItem('eur_usd_rate'));
       if (cached > 0.5 && cached < 2.0) return cached;
-      return 1.09; // valeur par défaut raisonnable
+      return 1.09;
     }
   ];
   for (const source of sources) {
@@ -1309,7 +1305,16 @@ function unlockApp() {
   fetchEurUsd().then(function() { buildSubNav(); renderSubPage(currentSubPage); });
   fetchAllCryptoPrices();
   fetchAllStockPrices();
-  _checkDropboxRefreshToken();
+  // ── DROPBOX OAUTH CALLBACK après déverrouillage ──
+  const _pendingCode = sessionStorage.getItem('db_pending_code');
+  if (_pendingCode) {
+    sessionStorage.removeItem('db_pending_code');
+    _exchangeToken(_pendingCode).then(function() {
+      buildSubNav(); renderSubPage(currentSubPage);
+    });
+  } else {
+    _checkDropboxRefreshToken();
+  }
 }
 
 // Crypto PRU migration (USD→EUR)
@@ -1549,6 +1554,16 @@ document.addEventListener('DOMContentLoaded', function() {
       filterQuickList(el.dataset.quicktype, el.dataset.quickid, el.value);
     }
   });
+  // ── DROPBOX OAUTH CALLBACK ──
+  // Quand Dropbox redirige avec ?code=XXX, on sauvegarde le code
+  // en sessionStorage pour le traiter après déverrouillage du PIN
+  const _urlParams = new URLSearchParams(window.location.search);
+  const _oauthCode = _urlParams.get('code');
+  if (_oauthCode) {
+    sessionStorage.setItem('db_pending_code', _oauthCode);
+    // Nettoyer l'URL sans recharger la page
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
 });
 // ══════════════════════════════════════════════════
 // DATA
