@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2026-03-10-1630 -->
+<!-- v2026-03-07-1025 -->
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -2130,7 +2130,7 @@ function renderCatTable(cat, list, total) {
 }
 
 // ══════════════════════════════════════════════════
-// WRAPPERS DROPBOX (compatibilité HTML onclick)
+// WRAPPERS DROPBOX
 // ══════════════════════════════════════════════════
 function oneDriveConnect()    { odConnect(); }
 function oneDriveDisconnect() { odDisconnect(); }
@@ -2140,76 +2140,36 @@ function oneDriveDisconnect() { odDisconnect(); }
 // ══════════════════════════════════════════════════
 function importSwissLifePER() {
   if (assets.find(function(a){ return a.id === 'asset_swisslife_per'; })) {
-    toast('ℹ️ SwissLife PER déjà importé — modifiez-le via ✎');
-    return;
+    toast('ℹ️ SwissLife PER déjà importé — modifiez-le via ✎'); return;
   }
   const today = new Date().toLocaleDateString('fr-FR', {day:'2-digit',month:'long',year:'numeric'});
-  const perAsset = {
-    id: 'asset_swisslife_per',
-    name: 'PER SwissLife',
-    cat: 'per',
-    date: '',
-    perGestionnaire: 'SwissLife',
-    perType: 'per-individuel',
-    perVersements: 0,
-    perValeur: 0,
-    perPctEuro: 0,
-    perPctUC: 100,
-    perDepartRetraite: '',
-    perHoldings: [],
-    perStructured: [],
-    note: 'Importé le ' + today + ' — à compléter'
-  };
-  assets.push(perAsset);
-  saveAll();
-  pushAH('Ajouté', perAsset);
-  buildSubNav();
-  renderSubPage('per');
+  assets.push({ id:'asset_swisslife_per', name:'PER SwissLife', cat:'per', date:'',
+    perGestionnaire:'SwissLife', perType:'per-individuel', perVersements:0, perValeur:0,
+    perPctEuro:0, perPctUC:100, perDepartRetraite:'', perHoldings:[], perStructured:[],
+    note:'Importé le '+today+' — à compléter' });
+  saveAll(); pushAH('Ajouté', assets[assets.length-1]);
+  buildSubNav(); renderSubPage('per');
   toast('✅ SwissLife PER ajouté — complétez les détails via ✎');
 }
 
 // ══════════════════════════════════════════════════
-// IMPORT PER — MILLEVIE (CAISSE D'ÉPARGNE)
-// Données au 10/03/2026 — N° PERIC020045
+// IMPORT PER — MILLEVIE (N°PERIC020045 — 10/03/2026)
 // ══════════════════════════════════════════════════
 function importMilleviePER() {
   if (assets.find(function(a){ return a.id === 'asset_millevie_per'; })) {
-    toast('ℹ️ Millevie PER déjà importé — modifiez-le via ✎');
-    return;
+    toast('ℹ️ Millevie PER déjà importé — modifiez-le via ✎'); return;
   }
   const today = new Date().toLocaleDateString('fr-FR', {day:'2-digit',month:'long',year:'numeric'});
-  const perAsset = {
-    id: 'asset_millevie_per',
-    name: "Millevie PER — Caisse d'Épargne",
-    cat: 'per',
-    date: '2021-06-08',
-    perGestionnaire: "Millevie (Caisse d'Épargne)",
-    perType: 'per-individuel',
-    perVersements: 1325.06,
-    perValeur: 1522.17,
-    perPctEuro: 0,
-    perPctUC: 100,
-    perDepartRetraite: '',
-    perHoldings: [
-      {
-        id: 'h_millevie_natixis',
-        name: 'Natixis ESG Dynamic Fund',
-        isin: 'LU2169559270',
-        ticker: '',
-        qty: 10.54868,
-        price: 144.30,
-        pru: 125.63,
-        value: 1522.17
-      }
-    ],
-    perStructured: [],
-    note: 'N° PERIC020045 · Importé le ' + today + ' · Valorisation au 10/03/2026'
-  };
-  assets.push(perAsset);
-  saveAll();
-  pushAH('Ajouté', perAsset);
-  buildSubNav();
-  renderSubPage('per');
+  assets.push({
+    id:'asset_millevie_per', name:"Millevie PER — Caisse d\'Épargne", cat:'per',
+    date:'2021-06-08', perGestionnaire:"Millevie (Caisse d\'Épargne)", perType:'per-individuel',
+    perVersements:1325.06, perValeur:1522.17, perPctEuro:0, perPctUC:100, perDepartRetraite:'',
+    perHoldings:[{ id:'h_millevie_natixis', name:'Natixis ESG Dynamic Fund',
+      isin:'LU2169559270', ticker:'', qty:10.54868, price:144.30, pru:125.63, value:1522.17 }],
+    perStructured:[], note:'N° PERIC020045 · Importé le '+today+' · Valorisation au 10/03/2026'
+  });
+  saveAll(); pushAH('Ajouté', assets[assets.length-1]);
+  buildSubNav(); renderSubPage('per');
   toast('✅ Millevie PER importé — 1 522,17 €');
 }
 
