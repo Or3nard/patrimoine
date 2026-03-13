@@ -1269,6 +1269,7 @@ function unlockApp() {
   if (encTok) { try { const dec=CryptoJS.AES.decrypt(encTok,_aesKey).toString(CryptoJS.enc.Utf8); if(dec&&dec.length>10){_dbToken=dec;localStorage.setItem('db_token',dec);} } catch(e) {} }
   if (!_dbToken) { const rawTok=localStorage.getItem('db_token'); if(rawTok&&rawTok.length>10)_dbToken=rawTok; }
   updateSyncBanner();
+  _patchMissingMeta();
   buildSubNav();
   renderSubPage(currentSubPage);
   fetchEurUsd().then(function() { buildSubNav(); renderSubPage(currentSubPage); });
@@ -3026,7 +3027,35 @@ function importSwissLifeAV(){
       {id:'h_sl_tempo_engie',
        name:'Tempo mensuel Engie dividende forfaitaire 1.35 EUR novembre 2025',
        isin:'XS3033993729',ticker:'',
-       qty:25.173,price:1085.10,pru:1000.00,value:27314.78},
+       qty:25.173,price:1085.10,pru:1000.00,value:27314.78,
+       meta:{
+        rows:[
+          ['Type','Autocall — Titre de créance (capital non protégé)'],
+          ['Émetteur','Goldman Sachs Finance Corp International Ltd'],
+          ['Garant','The Goldman Sachs Group, Inc.'],
+          ['Notation garant','A2 Moody\'s · BBB+ S&P · A Fitch'],
+          ['Sous-jacent','Indice Euronext G ENGIE 020925 GR Decrement 1.35'],
+          ['Décrément','1,35 pt/an (dividendes ENGIE réinvestis - 1,35)'],
+          ['ISIN','XS3033993729'],
+          ['Date d\'émission','18 septembre 2025'],
+          ['Échéance max','30 novembre 2037 (12 ans 2 mois)'],
+          ['1ère obs. autocall','14 novembre 2026 (mensuelle)'],
+          ['Gain autocall','1,10 % / mois écoulé (max TRA net 11,49 %/an)'],
+          ['Barrière autocall','100 % initial → dégressive -2,5 %/an → 75 %'],
+          ['Seuil remb. à échéance','≥ 72,5 % → 2 584 € / part'],
+          ['Protection capital','≥ 40 % → 1 000 € (capital remboursé)'],
+          ['Perte capital','< 40 % → perte proportionnelle (jusqu\'à 100 %)'],
+          ['Risque (PRIIPs)','5 / 7 (entre moyen et élevé)'],
+          ['Frais entrée','8,00 % · Récurrents 0,80 %/an'],
+          ['TRA net max','11,49 %/an (si autocall)']
+        ],
+        scenarios:[
+          {label:'Favorable (autocall M12)',value:'11 181 € (+11,8%/an)',color:'var(--green)'},
+          {label:'Intermédiaire (autocall M1)',value:'10 960 € (+9,6%/an)',color:'var(--teal)'},
+          {label:'Défavorable (à échéance)',value:'1 928 € (-12,6%/an)',color:'var(--red)'},
+          {label:'Tensions extrêmes',value:'694 €  (-31,7%/an)',color:'rgba(255,80,80,.8)'}
+        ]
+      }},
       {id:'h_sl_ffcap2029',
        name:'FF Cap 2029 C',
        isin:'FR001400QNM3',ticker:'',
@@ -3118,6 +3147,51 @@ function _renderStructRow(s) {
     + '<td style="padding:6px 8px;text-align:right;color:var(--muted)">' + (s.echeance || '—') + '</td>'
     + '</tr>';
 }
+
+// ── Patch meta on already-imported assets (run once on unlock) ──────────────
+function _patchMissingMeta() {
+  var TEMPO_META = {
+    rows:[
+      ['Type','Autocall — Titre de créance (capital non protégé)'],
+      ['Émetteur','Goldman Sachs Finance Corp International Ltd'],
+      ['Garant','The Goldman Sachs Group, Inc.'],
+      ['Notation garant','A2 Moody\'s · BBB+ S&P · A Fitch'],
+      ['Sous-jacent','Indice Euronext G ENGIE 020925 GR Decrement 1.35'],
+      ['Décrément','1,35 pt/an (dividendes ENGIE réinvestis - 1,35)'],
+      ['ISIN','XS3033993729'],
+      ['Date d\'émission','18 septembre 2025'],
+      ['Échéance max','30 novembre 2037 (12 ans 2 mois)'],
+      ['1ère obs. autocall','14 novembre 2026 (mensuelle)'],
+      ['Gain autocall','1,10 % / mois écoulé (max TRA net 11,49 %/an)'],
+      ['Barrière autocall','100 % initial → dégressive -2,5 %/an → 75 %'],
+      ['Seuil remb. à échéance','≥ 72,5 % → 2 584 € / part'],
+      ['Protection capital','≥ 40 % → 1 000 € (capital remboursé)'],
+      ['Perte capital','< 40 % → perte proportionnelle (jusqu\'à 100 %)'],
+      ['Risque (PRIIPs)','5 / 7 (entre moyen et élevé)'],
+      ['Frais entrée','8,00 % · Récurrents 0,80 %/an'],
+      ['TRA net max','11,49 %/an (si autocall)']
+    ],
+    scenarios:[
+      {label:'Favorable (autocall M12)',value:'11 181 € (+11,8%/an)',color:'var(--green)'},
+      {label:'Intermédiaire (autocall M1)',value:'10 960 € (+9,6%/an)',color:'var(--teal)'},
+      {label:'Défavorable (à échéance)',value:'1 928 € (-12,6%/an)',color:'var(--red)'},
+      {label:'Tensions extrêmes',value:'694 €  (-31,7%/an)',color:'rgba(255,80,80,.8)'}
+    ]
+  };
+  var TEMPO_IDS = ['h_sl_tempo_engie','h_swisslife_tempo_engie'];
+  var changed = false;
+  assets.forEach(function(a) {
+    var holdings = (a.perHoldings||[]).concat(a.avHoldings||[]);
+    holdings.forEach(function(h) {
+      if(TEMPO_IDS.indexOf(h.id) !== -1 && !h.meta) {
+        h.meta = TEMPO_META;
+        changed = true;
+      }
+    });
+  });
+  if (changed) { saveAll(); console.log('[patrimoine] meta patched on existing holdings'); }
+}
+
 
 </script>
 </body>
