@@ -1269,7 +1269,6 @@ function unlockApp() {
   if (encTok) { try { const dec=CryptoJS.AES.decrypt(encTok,_aesKey).toString(CryptoJS.enc.Utf8); if(dec&&dec.length>10){_dbToken=dec;localStorage.setItem('db_token',dec);} } catch(e) {} }
   if (!_dbToken) { const rawTok=localStorage.getItem('db_token'); if(rawTok&&rawTok.length>10)_dbToken=rawTok; }
   updateSyncBanner();
-  _patchMissingMeta();
   buildSubNav();
   renderSubPage(currentSubPage);
   fetchEurUsd().then(function() { buildSubNav(); renderSubPage(currentSubPage); });
@@ -2096,7 +2095,10 @@ function renderCatTable(cat, list, total) {
   if(cat==='assurance-vie') {
     const avAlreadySL=assets.find(function(a){return a.id==='asset_swisslife_av';});
     const avTypes={'fonds-euro':'Fonds euro','uc':'UC','mixte':'Mixte','per-av':'PER AV'};
-    const avImportBtn=!avAlreadySL?'<button class="btn" style="padding:10px 18px;font-size:13px;background:rgba(220,50,50,.12);border:1px solid rgba(220,50,50,.35);color:#e88;border-radius:8px;cursor:pointer" onclick="importSwissLifeAV()">🔴 Importer SwissLife Strategic Premium</button>':'';
+    const avAlreadyLS2=assets.find(function(a){return a.id==='asset_linxea_spirit2';});
+    const avBtnSL=!avAlreadySL?'<button class="btn" style="padding:10px 18px;font-size:13px;background:rgba(220,50,50,.12);border:1px solid rgba(220,50,50,.35);color:#e88;border-radius:8px;cursor:pointer" onclick="importSwissLifeAV()">🔴 Importer SwissLife Strategic Premium</button>':'';
+    const avBtnLS2=!avAlreadyLS2?'<button class="btn" style="padding:10px 18px;font-size:13px;background:rgba(80,160,220,.12);border:1px solid rgba(80,160,220,.35);color:#8cf;border-radius:8px;cursor:pointer" onclick="importLinxeaSpirit2()">🔵 Importer Linxea Spirit 2</button>':'';
+    const avImportBtn=avBtnSL+avBtnLS2;
     if(!list.length) return '<div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">'+avImportBtn+'</div><div class="empty-state"><div class="big">'+cat3.icon+'</div><div>Aucun actif — utilisez le bouton ci-dessus ou + Ajouter</div></div></div>';
     return `<div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${avImportBtn}</div>
@@ -3192,6 +3194,45 @@ function _patchMissingMeta() {
   if (changed) { saveAll(); console.log('[patrimoine] meta patched on existing holdings'); }
 }
 
+
+// ── Import Linxea Spirit 2 ────────────────────────────────────────────────────
+function importLinxeaSpirit2() {
+  if (assets.find(function(a){return a.id==='asset_linxea_spirit2';})) {
+    toast('ℹ️ Linxea Spirit 2 déjà importé'); return;
+  }
+  var today = new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
+  assets.push({
+    id:'asset_linxea_spirit2',
+    name:'Linxea Spirit 2',
+    cat:'assurance-vie',
+    date:'',
+    avInsurer:'Spirica',
+    avType:'uc',
+    avCost:3000,
+    avValue:3442.98,
+    avRate:0,
+    avPctEuro:4,
+    avPctUC:96,
+    avHoldings:[
+      {id:'h_ls2_estoxx50',  name:'Amundi Core EURO STOXX 50 UCITS ETF EUR Acc',                    isin:'LU1681047236', qty:0.4927,  price:152.54, pru:99.97},
+      {id:'h_ls2_msciworld', name:'Amundi Core MSCI World UCITS ETF Acc',                            isin:'IE000BI8OT95', qty:6.2418,  price:141.41, pru:119.26},
+      {id:'h_ls2_emerging',  name:'Amundi MSCI Emerging Markets Swap UCITS ETF EUR Acc',             isin:'LU1681045370', qty:10.6153, price:6.68,   pru:4.64},
+      {id:'h_ls2_sp500',     name:'Amundi S&P 500 Swap UCITS ETF EUR Acc',                           isin:'LU1681048804', qty:3.8920,  price:116.38, pru:89.07},
+      {id:'h_ls2_digital',   name:'Amundi MSCI Digital Economy UCITS ETF Acc',                      isin:'LU2023678878', qty:17.3640, price:16.07,  pru:14.29},
+      {id:'h_ls2_japan',     name:'Amundi MSCI Japan ESG Broad Transition UCITS ETF EUR Acc',        isin:'LU1602144732', qty:0.2245,  price:315.62, pru:219.41},
+      {id:'h_ls2_robotics',  name:'Amundi MSCI Robotics & AI UCITS ETF Acc',                        isin:'LU1861132840', qty:2.5413,  price:109.40, pru:97.64},
+      {id:'h_ls2_eurotech',  name:'Amundi STOXX Europe 600 Technology UCITS ETF Acc',               isin:'LU1834988518', qty:3.1040,  price:99.12,  pru:95.81},
+      {id:'h_ls2_immorente', name:'SCPI Immorente',                                                 isin:'SCPI00000619', qty:0.4443,  price:306.00, pru:306.00},
+      {id:'h_ls2_remake',    name:'SCPI Remake live',                                               isin:'SCPI00004799', qty:3.6490,  price:204.00, pru:204.00},
+      {id:'h_ls2_euro',      name:'Spirica Fonds Euro Nouvelle Génération',                         isin:'FONDSEURNG',   qty:1.0,     price:145.39, pru:145.39}
+    ],
+    avStructured:[],
+    note:'Importé le '+today+' · Valorisation au 12/03/2026'
+  });
+  saveAll(); pushAH('Ajouté', assets[assets.length-1]);
+  buildSubNav(); renderSubPage('assurance-vie');
+  toast('✅ Linxea Spirit 2 importé — 3 442,98 €');
+}
 
 </script>
 </body>
