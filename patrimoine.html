@@ -1857,6 +1857,7 @@ function renderCatPage(cat) {
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${catDef.autoPrice?`<button class="btn btn-blue" onclick="refreshCatPrices('${cat}')" id="refreshCatBtn">↻ Actualiser les cours</button>`:''}
         <button class="btn btn-gold" onclick="openAssetModalForCat('${cat}')">+ Ajouter</button>
+        ${cat==='actions'&&!assets.find(function(a){return a.note&&a.note.indexOf('PEA Fortuneo')!==-1;})?`<button class="btn" style="background:rgba(80,200,120,.12);border:1px solid rgba(80,200,120,.35);color:#7e8" onclick="importFortunePEA()">🟢 Importer PEA Fortuneo</button>`:''}
         ${cat==='crypto' ? `<button class="btn btn-gold" onclick="importCrypto()" style="background:transparent;border:1px solid var(--gold);color:var(--gold)">📥 Importer mes cryptos</button>` : ''}
       </div>
     </div>
@@ -1876,6 +1877,10 @@ function renderCatKPIs(cat, list, total) {
   const pvPct = totalCost>0?(pv/totalCost*100):0;
   const share = total>0?(totalVal/total*100):0;
   const cat3 = CAT[cat]||CAT.autre;
+
+  if(cat==='actions' && !list.length) {
+    return '<div class="empty-state"><div class="big">'+cat3.icon+'</div><div>Aucun actif — utilisez le bouton ci-dessus ou + Ajouter</div></div>';
+  }
 
   if(cat==='livrets') {
     const rates = getLivretRates();
@@ -1926,7 +1931,7 @@ function renderCatKPIs(cat, list, total) {
 }
 
 function renderCatTable(cat, list, total) {
-  if(!list.length && cat!=='assurance-vie' && cat!=='per') return '<div class="empty-state"><div class="big">'+CAT[cat]?.icon+'</div><div>Aucun actif dans cette catégorie</div></div>';
+  if(!list.length && cat!=='assurance-vie' && cat!=='per' && cat!=='actions') return '<div class="empty-state"><div class="big">'+CAT[cat]?.icon+'</div><div>Aucun actif dans cette catégorie</div></div>';
   const cat3 = CAT[cat]||CAT.autre;
 
   if(cat==='livrets') {
@@ -3232,6 +3237,42 @@ function importLinxeaSpirit2() {
   saveAll(); pushAH('Ajouté', assets[assets.length-1]);
   buildSubNav(); renderSubPage('assurance-vie');
   toast('✅ Linxea Spirit 2 importé — 3 442,98 €');
+}
+
+// ── Import PEA Fortuneo ──────────────────────────────────────────────────────
+function importFortunePEA() {
+  var existing = assets.filter(function(a){ return a.note && a.note.indexOf('PEA Fortuneo 018892038016') !== -1; });
+  if (existing.length > 0) { toast('ℹ️ PEA Fortuneo déjà importé ('+existing.length+' positions)'); return; }
+  var today = new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
+  var note = 'PEA Fortuneo 018892038016 · Importé le '+today+' · Cours au 13/03/2026';
+  var positions = [
+    {id:'pea_pcam',  name:'Amundi PEA MONDE (MSCI World) UCITS ETF Acc EUR',  ticker:'PCAM',   isin:'FR001400U5Q4', qty:17,  price:5.431,   pru:4.9265,  currency:'EUR'},
+    {id:'pea_asml',  name:'ASML Holding NV',                                   ticker:'ASML',   isin:'NL0010273215', qty:1,   price:1178.0,  pru:883.1,   currency:'EUR'},
+    {id:'pea_ewld',  name:'Amundi MSCI World Swap UCITS ETF EUR Acc',          ticker:'EWLD',   isin:'LU2655993207', qty:5,   price:36.127,  pru:29.876,  currency:'EUR'},
+    {id:'pea_en',    name:'Bouygues',                                           ticker:'EN',     isin:'FR0000120503', qty:3,   price:49.8,    pru:0,       currency:'EUR'},
+    {id:'pea_can',   name:'Canal Plus SA',                                      ticker:'CAN',    isin:'FR001400T0D6', qty:2,   price:2.571,   pru:3.348,   currency:'EUR'},
+    {id:'pea_fgr',   name:'Eiffage',                                            ticker:'FGR',    isin:'FR0000130452', qty:2,   price:134.65,  pru:0,       currency:'EUR'},
+    {id:'pea_el',    name:'EssilorLuxottica',                                   ticker:'EL',     isin:'FR0000121667', qty:1,   price:204.7,   pru:251.14,  currency:'EUR'},
+    {id:'pea_mc',    name:'LVMH Moët Hennessy Louis Vuitton',                  ticker:'MC',     isin:'FR0000121014', qty:2,   price:485.35,  pru:482.365, currency:'EUR'},
+    {id:'pea_sgo',   name:'Saint-Gobain',                                       ticker:'SGO',    isin:'FR0000125007', qty:5,   price:71.66,   pru:0,       currency:'EUR'},
+    {id:'pea_stlap', name:'Stellantis NV',                                      ticker:'STLAP',  isin:'NL00150001Q9', qty:37,  price:5.83,    pru:6.9338,  currency:'EUR'},
+    {id:'pea_tte',   name:'TotalEnergies SE',                                   ticker:'TTE',    isin:'FR0000120271', qty:7,   price:71.91,   pru:0,       currency:'EUR'},
+    {id:'pea_vie',   name:'Veolia Environnement',                               ticker:'VIE',    isin:'FR0000124141', qty:10,  price:33.0,    pru:0,       currency:'EUR'},
+  ];
+  positions.forEach(function(p) {
+    assets.push({
+      id: p.id, name: p.name, cat: 'actions',
+      ticker: p.ticker, isin: p.isin,
+      qty: p.qty, price: p.price, pru: p.pru,
+      currency: p.currency, exchange: 'Euronext Paris',
+      note: note
+    });
+  });
+  saveAll();
+  var total = positions.reduce(function(s,p){ return s + p.qty * p.price; }, 0);
+  pushAH('Ajouté', {name:'PEA Fortuneo ('+positions.length+' positions)', cat:'actions', price: total});
+  buildSubNav(); renderSubPage('actions');
+  toast('✅ PEA Fortuneo importé — '+positions.length+' positions — '+ Math.round(total).toLocaleString('fr-FR') +' €');
 }
 
 </script>
