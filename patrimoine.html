@@ -507,6 +507,9 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
           <option value="pee">PEE / PERE</option>
         </select>
       </div>
+      <div class="form-group"><label class="form-label">Courtier / Banque</label><input class="form-input" id="stockBroker" placeholder="ex: Fortuneo, Boursorama, Degiro…"></div>
+    </div>
+    <div class="form-row">
       <div class="form-group"><label class="form-label">Quantité</label><input class="form-input" id="stockQty" type="number" step="0.001" placeholder="0" oninput="calcStockValue()"></div>
     </div>
     <div class="form-row">
@@ -1153,7 +1156,7 @@ function usdToEur(usd) {
 function getAssetValue(a) {
   switch(a.cat) {
     case 'crypto':   return (parseFloat(a.cryptoQty)||0) * (parseFloat(a.cryptoPrice)||0);
-    case 'actions':  return (parseFloat(a.qty)||0) * (parseFloat(a.price)||0);
+    case 'actions':  return (parseFloat(a.stockQty)||0) * (parseFloat(a.stockPrice||a.stockPRU)||0);
     case 'livrets':  return parseFloat(a.livretSolde||a.value||0);
     case 'per':      return parseFloat(a.perValeur||0);
     case 'assurance-vie': return parseFloat(a.avValue||0);
@@ -1165,7 +1168,7 @@ function getAssetValue(a) {
 function getAssetCost(a) {
   switch(a.cat) {
     case 'crypto':   return (parseFloat(a.cryptoQty)||0) * (parseFloat(a.cryptoDCA||0));
-    case 'actions':  return (parseFloat(a.qty)||0) * (parseFloat(a.pru||0));
+    case 'actions':  return (parseFloat(a.stockQty)||0) * (parseFloat(a.stockPRU)||0);
     case 'livrets':  return parseFloat(a.livretSolde||a.value||0);
     case 'per':      return parseFloat(a.perVersements||0);
     case 'assurance-vie': return parseFloat(a.avCost||0);
@@ -1454,29 +1457,85 @@ async function fetchAllCryptoPrices() {
 }
 
 async function fetchAllStockPrices() {
-  const list = assets.filter(function(a){ return a.cat==='actions'; });
+  const list = assets.filter(function(a){ return a.cat==='actions' && (a.stockTicker||a.isin); });
   if (!list.length) return;
+  const updated = [];
   for (const a of list) {
-    if (!a.ticker) continue;
-    const proxies = [
-      'https://query1.finance.yahoo.com/v8/finance/chart/'+a.ticker+'?interval=1d&range=1d',
-      'https://query2.finance.yahoo.com/v8/finance/chart/'+a.ticker+'?interval=1d&range=1d'
+    const ticker = a.stockTicker || '';
+    if (!ticker) continue;
+    // Yahoo Finance suffix: European stocks need .PA, .AS etc — try raw ticker first, then suffixed
+    const tickers = [ticker, ticker+'.PA', ticker+'.AS', ticker+'.L'];
+    let got = false;
+    for (const t of tickers) {
+      const proxies = [
+        'https://query1.finance.yahoo.com/v8/finance/chart/'+t+'?interval=1d&range=2d',
+        'https://query2.finance.yahoo.com/v8/finance/chart/'+t+'?interval=1d&range=2d'
+      ];
+      for (const url of proxies) {
+        try {
+          const r = await fetch(url);
+          if (!r.ok) continue;
+          const d = await r.json();
+          const meta = d?.chart?.result?.[0]?.meta;
+          const price = meta?.regularMarketPrice;
+          if (price && price > 0) {
+            const prev = meta?.chartPreviousClose || meta?.previousClose || price;
+            a.stockPrice = price;
+            a.change24h = prev > 0 ? ((price - prev) / prev * 100) : 0;
+            a.priceUpdatedAt = new Date().toISOString();
+            a.stockYahooTicker = t;
+            updated.push(a.name);
+            got = true;
+            break;
+          }
+        } catch(e) {}
+        if (got) break;
+      }
+      if (got) break;
+    }
+  }
+  if (updated.length) { saveAll(); }
+  return updated;
+}
+
+async function refreshSinglePrice(assetId) {
+  const a = assets.find(function(x){return x.id===assetId;});
+  if (!a) return;
+  const ticker = a.stockTicker || a.ticker || '';
+  if (!ticker) { toast('⚠ Pas de ticker défini pour ' + a.name); return; }
+  const btn = document.querySelector('[onclick*="refreshSinglePrice(\''+assetId+'\'"]');
+  if (btn) btn.textContent = '…';
+  const tickers = [ticker, ticker+'.PA', ticker+'.AS', ticker+'.L'];
+  for (const t of tickers) {
+    const urls = [
+      'https://query1.finance.yahoo.com/v8/finance/chart/'+t+'?interval=1d&range=2d',
+      'https://query2.finance.yahoo.com/v8/finance/chart/'+t+'?interval=1d&range=2d'
     ];
-    for (const url of proxies) {
+    for (const url of urls) {
       try {
         const r = await fetch(url);
         if (!r.ok) continue;
         const d = await r.json();
-        const price = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
-        if (price) {
-          a.price = price;
+        const meta = d?.chart?.result?.[0]?.meta;
+        const price = meta?.regularMarketPrice;
+        if (price && price > 0) {
+          const prev = meta?.chartPreviousClose || price;
+          a.stockPrice = price;
+          a.change24h = prev > 0 ? ((price - prev) / prev * 100) : 0;
           a.priceUpdatedAt = new Date().toISOString();
-          break;
+          a.stockYahooTicker = t;
+          saveAll();
+          renderSubPage(currentSubPage);
+          toast('✅ ' + a.name + ' → ' + price.toLocaleString('fr-FR', {minimumFractionDigits:2}) + ' €');
+          return;
         }
       } catch(e) {}
     }
   }
+  toast('⚠ Cours introuvable pour ' + ticker);
+  if (btn) btn.textContent = '↻';
 }
+
 
 // ══════════════════════════════════════════════════════
 // MODAL HELPERS
@@ -1958,7 +2017,9 @@ function renderCatTable(cat, list, total) {
     var groups = {};
     list.forEach(function(a) {
       var gk = a.stockBrokerGroup || 'individual';
-      var gl = a.stockBroker || (a.stockAccount ? a.stockAccount.toUpperCase() : 'Autres');
+      var _broker = a.stockBroker || '';
+      var _acct = (a.stockAccount||'cto').toUpperCase();
+      var gl = _broker ? _broker + ' — ' + _acct : _acct;
       if (!groups[gk]) groups[gk] = {label: gl, items: []};
       groups[gk].items.push(a);
     });
@@ -2468,7 +2529,7 @@ function editAsset(id) {
     ['livretBanque','livretBalance','livretRate'].forEach(k=>{const el=document.getElementById(k);if(el)el.value=a[k]||'';});
     onLivretTypeChange();
   } else if(a.cat==='actions'){
-    ['stockTicker','stockQty','stockPRU','stockPrice','stockDiv'].forEach(k=>{const el=document.getElementById(k);if(el)el.value=a[k]||'';});
+    ['stockTicker','stockQty','stockPRU','stockPrice','stockDiv','stockBroker'].forEach(k=>{const el=document.getElementById(k);if(el)el.value=a[k]||'';});
     const se=document.getElementById('stockExchange');if(se)se.value=a.stockExchange||'PAR';
     const sa=document.getElementById('stockAccount');if(sa)sa.value=a.stockAccount||'cto';
     calcStockValue();
@@ -2525,6 +2586,8 @@ function saveAsset() {
     a.stockTicker=document.getElementById('stockTicker').value.trim().toUpperCase();
     a.stockExchange=document.getElementById('stockExchange').value;
     a.stockAccount=document.getElementById('stockAccount').value;
+    a.stockBroker=(document.getElementById('stockBroker')||{}).value||'';
+    a.stockBrokerGroup=a.stockBroker?a.stockBroker.toLowerCase().replace(/[^a-z0-9]/g,'_'):(a.stockAccount||'cto');
     a.stockQty=parseFloat(document.getElementById('stockQty').value)||0;
     a.stockPRU=parseFloat(document.getElementById('stockPRU').value)||0;
     a.stockPrice=parseFloat(document.getElementById('stockPrice').value)||0;
@@ -3247,26 +3310,37 @@ function _patchCryptoPlatform() {
 }
 
 function _patchPEAFields() {
-  // Fix already-imported PEA assets that used wrong field names (qty→stockQty etc.)
   var changed = false;
   assets.forEach(function(a) {
-    if (a.cat === 'actions' && a.note && a.note.indexOf('PEA Fortuneo') !== -1) {
+    if (a.cat !== 'actions') return;
+    // Fix old PEA Fortuneo imports with wrong field names
+    if (a.note && a.note.indexOf('PEA Fortuneo') !== -1) {
       if (a.qty !== undefined && a.stockQty === undefined) {
         a.stockQty = a.qty; delete a.qty;
         a.stockPrice = a.price || 0; delete a.price;
         a.stockPRU = a.pru || 0; delete a.pru;
         a.stockTicker = a.ticker || a.stockTicker || ''; delete a.ticker;
-        a.stockAccount = 'pea';
-        a.stockExchange = 'Euronext Paris';
-        a.stockBroker = 'Fortuneo PEA';
+        a.stockAccount = a.stockAccount || 'pea';
+        a.stockExchange = a.stockExchange || 'Euronext Paris';
+        a.stockBroker = a.stockBroker || 'Fortuneo';
+        changed = true;
+      }
+      if (!a.stockBrokerGroup) {
+        a.stockBroker = a.stockBroker || 'Fortuneo';
         a.stockBrokerGroup = 'fortuneo_pea';
         changed = true;
       }
     }
+    // Any action without brokerGroup: derive from broker or account
+    if (!a.stockBrokerGroup) {
+      a.stockBrokerGroup = a.stockBroker
+        ? a.stockBroker.toLowerCase().replace(/[^a-z0-9]/g, '_')
+        : (a.stockAccount || 'cto');
+      changed = true;
+    }
   });
-  if (changed) { saveAll(); console.log('[patrimoine] PEA fields patched'); }
+  if (changed) { saveAll(); console.log('[patrimoine] actions fields patched'); }
 }
-
 function _patchMissingMeta() {
   var TEMPO_META = {
     rows:[
