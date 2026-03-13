@@ -1926,7 +1926,7 @@ function renderCatKPIs(cat, list, total) {
 }
 
 function renderCatTable(cat, list, total) {
-  if(!list.length) return '<div class="empty-state"><div class="big">'+CAT[cat]?.icon+'</div><div>Aucun actif dans cette catégorie</div></div>';
+  if(!list.length && cat!=='assurance-vie' && cat!=='per') return '<div class="empty-state"><div class="big">'+CAT[cat]?.icon+'</div><div>Aucun actif dans cette catégorie</div></div>';
   const cat3 = CAT[cat]||CAT.autre;
 
   if(cat==='livrets') {
@@ -2081,32 +2081,8 @@ function renderCatTable(cat, list, total) {
           </div>
 <div id="perExpand_${a.id}" style="display:${(a.perHoldings&&a.perHoldings.length)||(a.perStructured&&a.perStructured.length)?'block':'none'}">
             <div style="padding:12px 16px">
-              ${(a.perHoldings&&a.perHoldings.length)?`<div style="font-size:10px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Unités de Compte</div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);font-size:10px"><th style="text-align:left;padding:4px 8px;font-weight:400">Fonds</th><th style="text-align:left;padding:4px 8px;font-weight:400">ISIN</th><th style="text-align:right;padding:4px 8px;font-weight:400">Qté</th><th style="text-align:right;padding:4px 8px;font-weight:400">Prix</th><th style="text-align:right;padding:4px 8px;font-weight:400">PRU</th><th style="text-align:right;padding:4px 8px;font-weight:400">Valeur</th><th style="text-align:right;padding:4px 8px;font-weight:400">+/-</th></tr></thead><tbody>${a.perHoldings.map(function(h){
-                    const hp=parseFloat(h.price)||0,hq=parseFloat(h.qty)||0,hpru=parseFloat(h.pru)||0;
-                    const hv=hq*hp,hc=hq*(hpru||hp),hpv=hv-hc,hpvp=hc>0?(hpv/hc*100):0;
-                    const noPrix=hp===0;
-                    const infoBtn=h.meta?`<button onclick="(function(){var m=document.getElementById('metaModal_${h.id||'x'}');if(m)m.style.display='flex';})()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;font-size:10px;padding:2px 5px;line-height:1" title="Fiche produit">ℹ️</button>`:'';
-                    const metaModal=h.meta?`<div id="metaModal_${h.id||'x'}" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'"><div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:480px;width:90%;max-height:80vh;overflow-y:auto"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px"><div><div style="font-weight:700;font-size:14px;margin-bottom:4px">${esc(h.name)}</div><div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">${esc(h.isin||'')}</div></div><button onclick="document.getElementById('metaModal_${h.id||'x'}').style.display='none'" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:0;line-height:1">×</button></div>${(h.meta.rows||[]).map(function(r){return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);font-size:12px"><span style="color:var(--muted)">'+esc(r[0])+'</span><span style="font-weight:500;text-align:right;max-width:60%">'+esc(r[1])+'</span></div>';}).join('')}${h.meta.scenarios?'<div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:6px;font-size:11px"><div style="font-weight:600;margin-bottom:6px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Scénarios (10 000€)</div>'+h.meta.scenarios.map(function(s){return '<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="'+(s.color?'color:'+s.color:'')+'">'+esc(s.label)+'</span><span style="font-weight:600;'+(s.color?'color:'+s.color:'')+'">'+esc(s.value)+'</span></div>';}).join('')+'</div>':''}</div></div>`:'';
-                    return `${metaModal}<tr style="border-top:1px solid var(--border)${noPrix?';opacity:.7':''}">
-                      <td style="padding:6px 8px;font-weight:500">${esc(h.name||'—')} ${infoBtn}</td>
-                      <td style="padding:6px 8px;font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">${esc(h.isin||'—')}</td>
-                      <td style="padding:6px 8px;text-align:right">${hq.toFixed(5)}</td>
-                      <td style="padding:6px 8px;text-align:right">${noPrix?'<span style="color:var(--red);font-size:10px">⚠ manquant</span>':fmt2(hp)}</td>
-                      <td style="padding:6px 8px;text-align:right;color:var(--muted)">${hpru>0?fmt2(hpru):'—'}</td>
-                      <td style="padding:6px 8px;text-align:right;font-weight:600;color:var(--gold2)">${noPrix?'<span style="color:var(--muted)">—</span>':fmt(hv)}</td>
-                      <td style="padding:6px 8px;text-align:right">${noPrix?'<span style="color:var(--muted)">—</span>':`<span class="change-cell ${hpv>=0?'up':'down'}">${hpv>=0?'+':''}${fmt(hpv)} (${hpvp>=0?'+':''}${hpvp.toFixed(1)}%)</span>`}</td>
-                    </tr>`;
-                  }).join('')}</tbody></table>`:''}
-              ${(a.perStructured&&a.perStructured.length)?`<div style="font-size:10px;color:var(--muted);margin:12px 0 8px;text-transform:uppercase;letter-spacing:.5px">Produits Structurés</div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);font-size:10px"><th style="text-align:left;padding:4px 8px;font-weight:400">Produit</th><th style="text-align:right;padding:4px 8px;font-weight:400">Valeur</th><th style="text-align:right;padding:4px 8px;font-weight:400">Échéance</th></tr></thead><tbody>${a.perStructured.map(function(s){
-                    const sv=parseFloat(s.valeur)||0;
-                    const infoBtn2=s.meta?`<button onclick="(function(){var m=document.getElementById('metaModal_s_${s.id||'sx'}');if(m)m.style.display='flex';})()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;font-size:10px;padding:2px 5px;line-height:1" title="Fiche produit">ℹ️</button>`:'';
-                    const metaModal2=s.meta?`<div id="metaModal_s_${s.id||'sx'}" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'"><div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:480px;width:90%;max-height:80vh;overflow-y:auto"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px"><div><div style="font-weight:700;font-size:14px;margin-bottom:4px">${esc(s.name)}</div><div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">${esc(s.isin||'')}</div></div><button onclick="document.getElementById('metaModal_s_${s.id||'sx'}').style.display='none'" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:0;line-height:1">×</button></div>${(s.meta.rows||[]).map(function(r){return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);font-size:12px"><span style="color:var(--muted)">'+esc(r[0])+'</span><span style="font-weight:500;text-align:right;max-width:60%">'+esc(r[1])+'</span></div>';}).join('')}${s.meta.scenarios?'<div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:6px;font-size:11px"><div style="font-weight:600;margin-bottom:6px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Scénarios (10 000€)</div>'+s.meta.scenarios.map(function(sc){return '<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="${sc.color?\'color:\'+sc.color:\'\'}">'+esc(sc.label)+'</span><span style="font-weight:600;${sc.color?\'color:\'+sc.color:\'\'}">'+esc(sc.value)+'</span></div>';}).join('')+'</div>':''}</div></div>`:'';
-                    return `${metaModal2}<tr style="border-top:1px solid var(--border)">
-                      <td style="padding:6px 8px">${esc(s.name||'—')} ${infoBtn2}</td>
-                      <td style="padding:6px 8px;text-align:right;color:${sv>0?'var(--gold2)':'var(--muted)'};font-weight:${sv>0?'600':'400'}">${sv>0?fmt(sv):'<span style="color:var(--red);font-size:10px">⚠ valeur manquante</span>'}</td>
-                      <td style="padding:6px 8px;text-align:right;color:var(--muted)">${s.echeance||'—'}</td>
-                    </tr>`;
-                  }).join('')}</tbody></table>`:''}
+              ${(a.perHoldings&&a.perHoldings.length)?`<div style="font-size:10px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Unités de Compte</div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);font-size:10px"><th style="text-align:left;padding:4px 8px;font-weight:400">Fonds</th><th style="text-align:left;padding:4px 8px;font-weight:400">ISIN</th><th style="text-align:right;padding:4px 8px;font-weight:400">Qté</th><th style="text-align:right;padding:4px 8px;font-weight:400">Prix</th><th style="text-align:right;padding:4px 8px;font-weight:400">PRU</th><th style="text-align:right;padding:4px 8px;font-weight:400">Valeur</th><th style="text-align:right;padding:4px 8px;font-weight:400">+/-</th></tr></thead><tbody>${a.perHoldings.map(function(h){return _renderHoldingRow(h);}).join('')}</tbody></table>`:''}
+              ${(a.perStructured&&a.perStructured.length)?`<div style="font-size:10px;color:var(--muted);margin:12px 0 8px;text-transform:uppercase;letter-spacing:.5px">Produits Structurés</div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);font-size:10px"><th style="text-align:left;padding:4px 8px;font-weight:400">Produit</th><th style="text-align:right;padding:4px 8px;font-weight:400">Valeur</th><th style="text-align:right;padding:4px 8px;font-weight:400">Échéance</th></tr></thead><tbody>${a.perStructured.map(function(s){return _renderStructRow(s);}).join('')}</tbody></table>`:''}
               ${!(a.perHoldings&&a.perHoldings.length)||(a.perStructured&&a.perStructured.length)?'<div style="color:var(--muted);font-size:11px;padding:4px 0">Aucun détail — modifiez via ✎</div>':''}
             </div>
           </div>
@@ -2115,14 +2091,14 @@ function renderCatTable(cat, list, total) {
     </div>`;
   }
 
-  // Assurance-Vie : cartes expandables
+  // Assurance-Vie
   if(cat==='assurance-vie') {
     const avAlreadySL=assets.find(function(a){return a.id==='asset_swisslife_av';});
     const avTypes={'fonds-euro':'Fonds euro','uc':'UC','mixte':'Mixte','per-av':'PER AV'};
+    const avImportBtn=!avAlreadySL?'<button class="btn" style="padding:10px 18px;font-size:13px;background:rgba(220,50,50,.12);border:1px solid rgba(220,50,50,.35);color:#e88;border-radius:8px;cursor:pointer" onclick="importSwissLifeAV()">🔴 Importer SwissLife Strategic Premium</button>':'';
+    if(!list.length) return '<div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">'+avImportBtn+'</div><div class="empty-state"><div class="big">'+cat3.icon+'</div><div>Aucun actif — utilisez le bouton ci-dessus ou + Ajouter</div></div></div>';
     return `<div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-        ${!avAlreadySL?`<button class="btn" style="padding:8px 16px;font-size:12px;background:rgba(220,50,50,.12);border:1px solid rgba(220,50,50,.3);color:#e88;border-radius:6px;cursor:pointer" onclick="importSwissLifeAV()">🔴 Importer SwissLife Strategic Premium</button>`:''}
-      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${avImportBtn}</div>
       ${list.map(function(a){
         const avc=parseFloat(a.avCost||0),avv=parseFloat(a.avValue||0),avpv=avv-avc,avpvp=avc>0?(avpv/avc*100):0;
         const avHasD=(a.avHoldings&&a.avHoldings.length)||(a.avStructured&&a.avStructured.length);
@@ -2149,32 +2125,8 @@ function renderCatTable(cat, list, total) {
           </div>
 <div id="avExpand_${a.id}" style="display:${(a.avHoldings&&a.avHoldings.length)||(a.avStructured&&a.avStructured.length)?'block':'none'}">
             <div style="padding:12px 16px">
-              ${(a.avHoldings&&a.avHoldings.length)?`<div style="font-size:10px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Unités de Compte</div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);font-size:10px"><th style="text-align:left;padding:4px 8px;font-weight:400">Fonds</th><th style="text-align:left;padding:4px 8px;font-weight:400">ISIN</th><th style="text-align:right;padding:4px 8px;font-weight:400">Qté</th><th style="text-align:right;padding:4px 8px;font-weight:400">Prix</th><th style="text-align:right;padding:4px 8px;font-weight:400">PRU</th><th style="text-align:right;padding:4px 8px;font-weight:400">Valeur</th><th style="text-align:right;padding:4px 8px;font-weight:400">+/-</th></tr></thead><tbody>${a.avHoldings.map(function(h){
-                    const hp=parseFloat(h.price)||0,hq=parseFloat(h.qty)||0,hpru=parseFloat(h.pru)||0;
-                    const hv=hq*hp,hc=hq*(hpru||hp),hpv=hv-hc,hpvp=hc>0?(hpv/hc*100):0;
-                    const noPrix=hp===0;
-                    const infoBtn=h.meta?`<button onclick="(function(){var m=document.getElementById('metaModal_${h.id||'x'}');if(m)m.style.display='flex';})()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;font-size:10px;padding:2px 5px;line-height:1" title="Fiche produit">ℹ️</button>`:'';
-                    const metaModal=h.meta?`<div id="metaModal_${h.id||'x'}" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'"><div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:480px;width:90%;max-height:80vh;overflow-y:auto"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px"><div><div style="font-weight:700;font-size:14px;margin-bottom:4px">${esc(h.name)}</div><div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">${esc(h.isin||'')}</div></div><button onclick="document.getElementById('metaModal_${h.id||'x'}').style.display='none'" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:0;line-height:1">×</button></div>${(h.meta.rows||[]).map(function(r){return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);font-size:12px"><span style="color:var(--muted)">'+esc(r[0])+'</span><span style="font-weight:500;text-align:right;max-width:60%">'+esc(r[1])+'</span></div>';}).join('')}${h.meta.scenarios?'<div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:6px;font-size:11px"><div style="font-weight:600;margin-bottom:6px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Scénarios (10 000€)</div>'+h.meta.scenarios.map(function(s){return '<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="'+(s.color?'color:'+s.color:'')+'">'+esc(s.label)+'</span><span style="font-weight:600;'+(s.color?'color:'+s.color:'')+'">'+esc(s.value)+'</span></div>';}).join('')+'</div>':''}</div></div>`:'';
-                    return `${metaModal}<tr style="border-top:1px solid var(--border)${noPrix?';opacity:.7':''}">
-                      <td style="padding:6px 8px;font-weight:500">${esc(h.name||'—')} ${infoBtn}</td>
-                      <td style="padding:6px 8px;font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">${esc(h.isin||'—')}</td>
-                      <td style="padding:6px 8px;text-align:right">${hq.toFixed(5)}</td>
-                      <td style="padding:6px 8px;text-align:right">${noPrix?'<span style="color:var(--red);font-size:10px">⚠ manquant</span>':fmt2(hp)}</td>
-                      <td style="padding:6px 8px;text-align:right;color:var(--muted)">${hpru>0?fmt2(hpru):'—'}</td>
-                      <td style="padding:6px 8px;text-align:right;font-weight:600;color:var(--gold2)">${noPrix?'<span style="color:var(--muted)">—</span>':fmt(hv)}</td>
-                      <td style="padding:6px 8px;text-align:right">${noPrix?'<span style="color:var(--muted)">—</span>':`<span class="change-cell ${hpv>=0?'up':'down'}">${hpv>=0?'+':''}${fmt(hpv)} (${hpvp>=0?'+':''}${hpvp.toFixed(1)}%)</span>`}</td>
-                    </tr>`;
-                  }).join('')}</tbody></table>`:''}
-              ${(a.avStructured&&a.avStructured.length)?`<div style="font-size:10px;color:var(--muted);margin:12px 0 8px;text-transform:uppercase;letter-spacing:.5px">Produits Structurés</div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);font-size:10px"><th style="text-align:left;padding:4px 8px;font-weight:400">Produit</th><th style="text-align:right;padding:4px 8px;font-weight:400">Valeur</th><th style="text-align:right;padding:4px 8px;font-weight:400">Échéance</th></tr></thead><tbody>${a.avStructured.map(function(s){
-                    const sv=parseFloat(s.valeur)||0;
-                    const infoBtn2=s.meta?`<button onclick="(function(){var m=document.getElementById('metaModal_s_${s.id||'sx'}');if(m)m.style.display='flex';})()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;font-size:10px;padding:2px 5px;line-height:1" title="Fiche produit">ℹ️</button>`:'';
-                    const metaModal2=s.meta?`<div id="metaModal_s_${s.id||'sx'}" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'"><div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:480px;width:90%;max-height:80vh;overflow-y:auto"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px"><div><div style="font-weight:700;font-size:14px;margin-bottom:4px">${esc(s.name)}</div><div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">${esc(s.isin||'')}</div></div><button onclick="document.getElementById('metaModal_s_${s.id||'sx'}').style.display='none'" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:0;line-height:1">×</button></div>${(s.meta.rows||[]).map(function(r){return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);font-size:12px"><span style="color:var(--muted)">'+esc(r[0])+'</span><span style="font-weight:500;text-align:right;max-width:60%">'+esc(r[1])+'</span></div>';}).join('')}${s.meta.scenarios?'<div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:6px;font-size:11px"><div style="font-weight:600;margin-bottom:6px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Scénarios (10 000€)</div>'+s.meta.scenarios.map(function(sc){return '<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="${sc.color?\'color:\'+sc.color:\'\'}">'+esc(sc.label)+'</span><span style="font-weight:600;${sc.color?\'color:\'+sc.color:\'\'}">'+esc(sc.value)+'</span></div>';}).join('')+'</div>':''}</div></div>`:'';
-                    return `${metaModal2}<tr style="border-top:1px solid var(--border)">
-                      <td style="padding:6px 8px">${esc(s.name||'—')} ${infoBtn2}</td>
-                      <td style="padding:6px 8px;text-align:right;color:${sv>0?'var(--gold2)':'var(--muted)'};font-weight:${sv>0?'600':'400'}">${sv>0?fmt(sv):'<span style="color:var(--red);font-size:10px">⚠ valeur manquante</span>'}</td>
-                      <td style="padding:6px 8px;text-align:right;color:var(--muted)">${s.echeance||'—'}</td>
-                    </tr>`;
-                  }).join('')}</tbody></table>`:''}
+              ${(a.avHoldings&&a.avHoldings.length)?`<div style="font-size:10px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Unités de Compte</div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);font-size:10px"><th style="text-align:left;padding:4px 8px;font-weight:400">Fonds</th><th style="text-align:left;padding:4px 8px;font-weight:400">ISIN</th><th style="text-align:right;padding:4px 8px;font-weight:400">Qté</th><th style="text-align:right;padding:4px 8px;font-weight:400">Prix</th><th style="text-align:right;padding:4px 8px;font-weight:400">PRU</th><th style="text-align:right;padding:4px 8px;font-weight:400">Valeur</th><th style="text-align:right;padding:4px 8px;font-weight:400">+/-</th></tr></thead><tbody>${a.avHoldings.map(function(h){return _renderHoldingRow(h);}).join('')}</tbody></table>`:''}
+              ${(a.avStructured&&a.avStructured.length)?`<div style="font-size:10px;color:var(--muted);margin:12px 0 8px;text-transform:uppercase;letter-spacing:.5px">Produits Structurés</div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);font-size:10px"><th style="text-align:left;padding:4px 8px;font-weight:400">Produit</th><th style="text-align:right;padding:4px 8px;font-weight:400">Valeur</th><th style="text-align:right;padding:4px 8px;font-weight:400">Échéance</th></tr></thead><tbody>${a.avStructured.map(function(s){return _renderStructRow(s);}).join('')}</tbody></table>`:''}
               ${!(a.avHoldings&&a.avHoldings.length)||(a.avStructured&&a.avStructured.length)?'<div style="color:var(--muted);font-size:11px;padding:4px 0">Aucun détail — modifiez via ✎</div>':''}
             </div>
           </div>
@@ -3074,58 +3026,97 @@ function importSwissLifeAV(){
       {id:'h_sl_tempo_engie',
        name:'Tempo mensuel Engie dividende forfaitaire 1.35 EUR novembre 2025',
        isin:'XS3033993729',ticker:'',
-       qty:25.173,price:1085.10,pru:1000.00,value:27314.78,
-       meta:{
-      rows:[
-        ['Type','Autocall — Titre de créance (capital non protégé)'],
-        ['Émetteur','Goldman Sachs Finance Corp International Ltd'],
-        ['Garant','The Goldman Sachs Group, Inc.'],
-        ['Notation garant','A2 Moody\'s · BBB+ S&P · A Fitch'],
-        ['Sous-jacent','Indice Euronext G ENGIE 020925 GR Decrement 1.35'],
-        ['Décrément','1,35 pt/an (dividendes ENGIE réinvestis - 1,35)'],
-        ['ISIN','XS3033993729'],
-        ['Date d\'émission','18 septembre 2025'],
-        ['Échéance max','30 novembre 2037 (12 ans 2 mois)'],
-        ['1ère obs. autocall','14 novembre 2026 (mensuelle)'],
-        ['Gain autocall','1,10 % / mois écoulé (max TRA net 11,49 %/an)'],
-        ['Barrière autocall','100 % initial → dégressive -2,5 %/an → 75 %'],
-        ['Seuil remb. à échéance','≥ 72,5 % → 2 584 € / part'],
-        ['Protection capital','≥ 40 % → 1 000 € (capital remboursé)'],
-        ['Perte capital','< 40 % → perte proportionnelle (jusqu\'à 100 %)'],
-        ['Risque (PRIIPs)','5 / 7 (entre moyen et élevé)'],
-        ['Marché','Luxembourg (marché réglementé)'],
-        ['Valeur nominale','1 000 €'],
-        ['Frais entrée','8,00 %'],
-        ['Frais récurrents','0,80 %/an'],
-        ['TRA net max favori','11,49 %/an (remboursement anticipé)']
-      ],
-      scenarios:[
-        {label:'Favorable (autocall M12, +20%)',value:'11 181 € (+11,8%/an)',color:'var(--green)'},
-        {label:'Intermédiaire (autocall M1, +9,6%)',value:'10 960 € (+9,6%/an)',color:'var(--teal)'},
-        {label:'Défavorable (à éch., -31%)',value:'1 928 € (-12,6%/an)',color:'var(--red)'},
-        {label:'Tensions extrêmes',value:'694 € (-31,7%/an)',color:'rgba(255,80,80,.8)'}
-      ]
-    }},
+       qty:25.173,price:1085.10,pru:1000.00,value:27314.78},
       {id:'h_sl_ffcap2029',
        name:'FF Cap 2029 C',
        isin:'FR001400QNM3',ticker:'',
-       qty:49.329,price:107.26,pru:106.38,value:5291.04,
-       meta:{
-         rows:[
-           ['Type','Fonds commun de placement'],
-           ['ISIN','FR001400QNM3'],
-           ['Nb parts (au 10/03/2026)','49,329'],
-           ['Prix de part','107,26 €'],
-           ['PRU','106,38 €'],
-           ['Valeur au 10/03/2026','5 291,04 € (+0,82 %)'],
-           ['Part dans l\'encours','16,23 %']
-         ]
-       }}
+       qty:49.329,price:107.26,pru:106.38,value:5291.04}
     ],
     avStructured:[],
     note:"N° 00107791382001 · Importé le "+today+" · Valorisation au 10/03/2026"});
   saveAll();pushAH('Ajouté',assets[assets.length-1]);buildSubNav();renderSubPage('assurance-vie');
   toast('✅ SwissLife Strategic Premium importé — 32 605,82 €');
+}
+
+// ── Rendering helpers for holdings and structured products ──────────────────
+function _renderMetaModal(id, name, isin, meta) {
+  if (!meta) return '';
+  var rows = (meta.rows || []).map(function(r) {
+    return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);font-size:12px">'
+      + '<span style="color:var(--muted)">' + esc(r[0]) + '</span>'
+      + '<span style="font-weight:500;text-align:right;max-width:60%">' + esc(r[1]) + '</span></div>';
+  }).join('');
+  var scenarios = '';
+  if (meta.scenarios) {
+    scenarios = '<div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:6px;font-size:11px">'
+      + '<div style="font-weight:600;margin-bottom:6px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Scénarios (10 000€)</div>'
+      + meta.scenarios.map(function(s) {
+          var col = s.color ? 'color:' + s.color : '';
+          return '<div style="display:flex;justify-content:space-between;padding:3px 0">'
+            + '<span style="' + col + '">' + esc(s.label) + '</span>'
+            + '<span style="font-weight:600;' + col + '">' + esc(s.value) + '</span></div>';
+        }).join('')
+      + '</div>';
+  }
+  return '<div id="' + id + '" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display=\'none\'">'
+    + '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:480px;width:90%;max-height:80vh;overflow-y:auto">'
+    + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">'
+    + '<div><div style="font-weight:700;font-size:14px;margin-bottom:4px">' + esc(name) + '</div>'
+    + '<div style="font-family:\'DM Mono\',monospace;font-size:10px;color:var(--muted)">' + esc(isin || '') + '</div></div>'
+    + '<button onclick="document.getElementById(\'' + id + '\').style.display=\'none\'" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:0;line-height:1">×</button></div>'
+    + rows + scenarios
+    + '</div></div>';
+}
+
+function _renderHoldingRow(h) {
+  var hp = parseFloat(h.price) || 0;
+  var hq = parseFloat(h.qty) || 0;
+  var hpru = parseFloat(h.pru) || 0;
+  var hv = hq * hp;
+  var hc = hq * (hpru || hp);
+  var hpv = hv - hc;
+  var hpvp = hc > 0 ? (hpv / hc * 100) : 0;
+  var noPrix = hp === 0;
+  var mid = 'metaModal_' + (h.id || 'hx');
+  var modal = _renderMetaModal(mid, h.name || '', h.isin || '', h.meta);
+  var infoBtn = h.meta
+    ? '<button onclick="(function(){var m=document.getElementById(\'' + mid + '\');if(m)m.style.display=\'flex\';})()" '
+      + 'style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;font-size:10px;padding:2px 5px;line-height:1" title="Fiche produit">ℹ️</button>'
+    : '';
+  var valCell = noPrix ? '<span style="color:var(--muted)">—</span>' : fmt(hv);
+  var pvCell = noPrix ? '<span style="color:var(--muted)">—</span>'
+    : '<span class="change-cell ' + (hpv >= 0 ? 'up' : 'down') + '">'
+      + (hpv >= 0 ? '+' : '') + fmt(hpv) + ' (' + (hpvp >= 0 ? '+' : '') + hpvp.toFixed(1) + '%)</span>';
+  var priceCell = noPrix ? '<span style="color:var(--red);font-size:10px">⚠ manquant</span>' : fmt2(hp);
+  return modal
+    + '<tr style="border-top:1px solid var(--border)' + (noPrix ? ';opacity:.7' : '') + '">'
+    + '<td style="padding:6px 8px;font-weight:500">' + esc(h.name || '—') + ' ' + infoBtn + '</td>'
+    + '<td style="padding:6px 8px;font-family:\'DM Mono\',monospace;font-size:10px;color:var(--muted)">' + esc(h.isin || '—') + '</td>'
+    + '<td style="padding:6px 8px;text-align:right">' + hq.toFixed(5) + '</td>'
+    + '<td style="padding:6px 8px;text-align:right">' + priceCell + '</td>'
+    + '<td style="padding:6px 8px;text-align:right;color:var(--muted)">' + (hpru > 0 ? fmt2(hpru) : '—') + '</td>'
+    + '<td style="padding:6px 8px;text-align:right;font-weight:600;color:var(--gold2)">' + valCell + '</td>'
+    + '<td style="padding:6px 8px;text-align:right">' + pvCell + '</td>'
+    + '</tr>';
+}
+
+function _renderStructRow(s) {
+  var sv = parseFloat(s.valeur) || 0;
+  var mid = 'metaModal_s_' + (s.id || 'sx');
+  var modal = _renderMetaModal(mid, s.name || '', s.isin || '', s.meta);
+  var infoBtn = s.meta
+    ? '<button onclick="(function(){var m=document.getElementById(\'' + mid + '\');if(m)m.style.display=\'flex\';})()" '
+      + 'style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;font-size:10px;padding:2px 5px;line-height:1" title="Fiche produit">ℹ️</button>'
+    : '';
+  var valCell = sv > 0
+    ? '<span style="color:var(--gold2);font-weight:600">' + fmt(sv) + '</span>'
+    : '<span style="color:var(--red);font-size:10px">⚠ valeur manquante</span>';
+  return modal
+    + '<tr style="border-top:1px solid var(--border)">'
+    + '<td style="padding:6px 8px">' + esc(s.name || '—') + ' ' + infoBtn + '</td>'
+    + '<td style="padding:6px 8px;text-align:right">' + valCell + '</td>'
+    + '<td style="padding:6px 8px;text-align:right;color:var(--muted)">' + (s.echeance || '—') + '</td>'
+    + '</tr>';
 }
 
 </script>
