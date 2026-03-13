@@ -1269,6 +1269,9 @@ function unlockApp() {
   if (encTok) { try { const dec=CryptoJS.AES.decrypt(encTok,_aesKey).toString(CryptoJS.enc.Utf8); if(dec&&dec.length>10){_dbToken=dec;localStorage.setItem('db_token',dec);} } catch(e) {} }
   if (!_dbToken) { const rawTok=localStorage.getItem('db_token'); if(rawTok&&rawTok.length>10)_dbToken=rawTok; }
   updateSyncBanner();
+  _patchCryptoPlatform();
+  _patchPEAFields();
+  _patchMissingMeta();
   buildSubNav();
   renderSubPage(currentSubPage);
   fetchEurUsd().then(function() { buildSubNav(); renderSubPage(currentSubPage); });
@@ -1951,34 +1954,109 @@ function renderCatTable(cat, list, total) {
   }
 
   if(cat==='actions') {
-    return `<table class="data-table"><thead><tr><th style="padding-left:18px">Valeur</th><th>Compte</th><th>Qté</th><th>PRU</th><th>Cours actuel</th><th>Valeur totale</th><th>+/- value</th><th>Mise à jour</th><th>Actions</th></tr></thead><tbody>${list.map(a=>{
+    // Group by stockBrokerGroup (or fallback: 'individual')
+    var groups = {};
+    list.forEach(function(a) {
+      var gk = a.stockBrokerGroup || 'individual';
+      var gl = a.stockBroker || (a.stockAccount ? a.stockAccount.toUpperCase() : 'Autres');
+      if (!groups[gk]) groups[gk] = {label: gl, items: []};
+      groups[gk].items.push(a);
+    });
+    var groupKeys = Object.keys(groups);
+    // If only one group with key 'individual' → flat table (legacy)
+    if (groupKeys.length === 1 && groupKeys[0] === 'individual') {
+      return `<table class="data-table"><thead><tr><th style="padding-left:18px">Valeur</th><th>Compte</th><th>Qté</th><th>PRU</th><th>Cours actuel</th><th>Valeur totale</th><th>+/- value</th><th>Mise à jour</th><th>Actions</th></tr></thead><tbody>${list.map(a=>{
       const qty=parseFloat(a.stockQty||0), pru=parseFloat(a.stockPRU||0), price=parseFloat(a.stockPrice||pru);
       const val=qty*price, cost=qty*pru, pv=val-cost, pvPct=cost>0?(pv/cost*100):0;
       return `<tr class="data-row" onclick="editAsset('${a.id}')"><td style="padding-left:18px"><div class="name-cell"><div class="cat-icon" style="background:${cat3.color}18;color:${cat3.color}">${cat3.icon}</div><div><div class="name-main">${esc(a.name)}</div><div class="name-sub">${a.stockTicker||''} · ${a.stockExchange||''}</div></div></div></td>
-      <td><span class="pill ${a.stockAccount}">${(a.stockAccount||'cto').toUpperCase()}</span></td>
+      <td><span class="pill ${a.stockAccount||'cto'}">${(a.stockAccount||'cto').toUpperCase()}</span></td>
       <td>${qty.toLocaleString('fr-FR',{maximumFractionDigits:3})}</td><td>${fmt2(pru)}</td>
-      <td><div><div style="font-weight:500">${fmt2(price)}</div>${a.change24h?`<div class="change-cell ${a.change24h>=0?'up':'down'}" style="font-size:10px">${a.change24h>=0?'▲':'▼'} ${Math.abs(a.change24h).toFixed(2)}%</div>`:''}</div></td>
-      <td style="font-weight:500">${fmt(val)}</td>
-      <td><div class="change-cell ${pv>=0?'up':'down'}">${pv>=0?'+':''}${fmt(pv)} <span style="opacity:.6">(${pvPct>=0?'+':''}${pvPct.toFixed(1)}%)</span></div></td>
-      <td style="font-size:10px;color:var(--muted)">${a.priceUpdatedAt?timeSince(a.priceUpdatedAt):'—'}</td>
-      <td><div style="display:flex;gap:5px;justify-content:flex-end" onclick="event.stopPropagation()"><button class="action-btn" onclick="refreshSingleStock('${a.id}')" title="Actualiser">↻</button><button class="action-btn" onclick="editAsset('${a.id}')">✎</button><button class="action-btn danger" onclick="deleteAsset('${a.id}')">✕</button></div></td></tr>`;
+      <td><div style="font-weight:500">${fmt2(price)}</div></td>
+      <td style="font-weight:600;color:var(--gold2)">${fmt(val)}</td>
+      <td><span class="change-cell ${pv>=0?'up':'down'}">${pv>=0?'+':''}${fmt(pv)}<br><span style="font-size:10px">${pvPct>=0?'+':''}${pvPct.toFixed(1)}%</span></span></td>
+      <td style="color:var(--muted);font-size:10px">${a.priceUpdatedAt ? new Date(a.priceUpdatedAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}) : '—'}</td>
+      <td><div style="display:flex;gap:5px" onclick="event.stopPropagation()"><button class="action-btn" onclick="refreshSinglePrice('${a.id}')">↻</button><button class="action-btn" onclick="editAsset('${a.id}')">✎</button><button class="action-btn danger" onclick="deleteAsset('${a.id}')">✕</button></div></td></tr>`;
     }).join('')}</tbody></table>`;
+    }
+    // Multi-group accordion view
+    var HDR_A = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);font-size:10px"><th style="text-align:left;padding:4px 8px;font-weight:400">Valeur</th><th style="text-align:left;padding:4px 8px;font-weight:400">ISIN</th><th style="text-align:right;padding:4px 8px;font-weight:400">Qté</th><th style="text-align:right;padding:4px 8px;font-weight:400">PRU</th><th style="text-align:right;padding:4px 8px;font-weight:400">Cours</th><th style="text-align:right;padding:4px 8px;font-weight:400">Valeur</th><th style="text-align:right;padding:4px 8px;font-weight:400">+/-</th></tr></thead>';
+    return '<div>' + groupKeys.map(function(gk) {
+      var g = groups[gk];
+      var gVal = g.items.reduce(function(s,a){ return s+(parseFloat(a.stockQty||0)*parseFloat(a.stockPrice||a.stockPRU||0));},0);
+      var gCost= g.items.reduce(function(s,a){ var pru=parseFloat(a.stockPRU||0); return s+(pru>0?parseFloat(a.stockQty||0)*pru:parseFloat(a.stockQty||0)*parseFloat(a.stockPrice||0));},0);
+      var gPV  = gVal - gCost, gPVp = gCost>0?(gPV/gCost*100):0;
+      var rows = g.items.map(function(a) {
+        var qty=parseFloat(a.stockQty||0), pru=parseFloat(a.stockPRU||0), price=parseFloat(a.stockPrice||pru);
+        var val=qty*price, cost=qty*(pru||price), pv=val-cost, pvPct=cost>0?(pv/cost*100):0;
+        return '<tr style="border-top:1px solid var(--border)">'
+          +'<td style="padding:5px 8px;font-weight:500">'+esc(a.name)+'<div style="font-size:10px;color:var(--muted)">'+esc(a.stockTicker||'')+'</div></td>'
+          +'<td style="padding:5px 8px;font-family:\'DM Mono\',monospace;font-size:10px;color:var(--muted)">'+esc(a.isin||'—')+'</td>'
+          +'<td style="padding:5px 8px;text-align:right">'+qty.toLocaleString('fr-FR',{maximumFractionDigits:4})+'</td>'
+          +'<td style="padding:5px 8px;text-align:right;color:var(--muted)">'+(pru>0?fmt2(pru):'NC')+'</td>'
+          +'<td style="padding:5px 8px;text-align:right">'+fmt2(price)+'</td>'
+          +'<td style="padding:5px 8px;text-align:right;font-weight:600;color:var(--gold2)">'+fmt(val)+'</td>'
+          +'<td style="padding:5px 8px;text-align:right"><span class="change-cell '+(pv>=0?'up':'down')+'">'+(pv>=0?'+':'')+fmt(pv)+'<br><span style="font-size:10px">'+(pvPct>=0?'+':'')+pvPct.toFixed(1)+'%</span></span></td>'
+          +'</tr>';
+      }).join('');
+      return '<div style="border:1px solid var(--border);border-radius:10px;margin-bottom:12px">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--surface2);border-radius:10px 10px 0 0;cursor:pointer" onclick="(function(){var el=document.getElementById(\'actGrp_'+gk+'\'),ch=document.getElementById(\'actChv_'+gk+'\');if(el){el.style.display=el.style.display===\'none\'?\'block\':\'none\';ch.textContent=el.style.display===\'none\'?\'▶\':\'▼\';}})();">'
+        +'<div style="display:flex;align-items:center;gap:12px">'
+        +'<div class="cat-icon" style="background:'+cat3.color+'18;color:'+cat3.color+'">'+cat3.icon+'</div>'
+        +'<div><div style="font-weight:600">'+esc(g.label)+'</div><div style="font-size:11px;color:var(--muted)">'+g.items.length+' position'+(g.items.length>1?'s':'')+'</div></div></div>'
+        +'<div style="display:flex;align-items:center;gap:16px">'
+        +'<div style="text-align:right"><div style="font-weight:600;color:var(--gold2)">'+fmt(gVal)+'</div>'
+        +'<div style="font-size:11px" class="change-cell '+(gPV>=0?'up':'down')+'">'+(gPV>=0?'+':'')+fmt(gPV)+' ('+(gPVp>=0?'+':'')+gPVp.toFixed(1)+'%)</div></div>'
+        +'<span id="actChv_'+gk+'" style="color:var(--muted);font-size:12px">▼</span>'
+        +'</div></div>'
+        +'<div id="actGrp_'+gk+'" style="display:block;padding:8px 0">'
+        + HDR_A +'<tbody>'+rows+'</tbody></table>'
+        +'</div></div>';
+    }).join('') + '</div>';
   }
 
   if(cat==='crypto') {
-    return `<table class="data-table"><thead><tr><th style="padding-left:18px">Coin</th><th>Plateforme</th><th>Quantité</th><th>PRU (€)</th><th>Cours actuel</th><th>Valeur</th><th>+/- value</th><th>Mise à jour</th><th>Actions</th></tr></thead><tbody>${list.map(a=>{
-      const qty=parseFloat(a.cryptoQty||0), dca=parseFloat(a.cryptoDCA||0), price=parseFloat(a.cryptoPrice||dca);
-      const val=qty*price, cost=qty*dca, pv=val-cost, pvPct=cost>0?(pv/cost*100):0;
-      const coinName=CRYPTO_CGS[a.cryptoCoin]||a.cryptoCustomId||a.cryptoCoin||'Crypto';
-      return `<tr class="data-row" onclick="editAsset('${a.id}')"><td style="padding-left:18px"><div class="name-cell"><div class="cat-icon" style="background:${cat3.color}18;color:${cat3.color}">${cat3.icon}</div><div><div class="name-main">${esc(a.name)}</div><div class="name-sub">${coinName}</div></div></div></td>
-      <td style="color:var(--muted)">${esc(a.cryptoPlatform||'—')}</td>
-      <td>${qty.toLocaleString('fr-FR',{maximumFractionDigits:8})}</td><td>${fmt2(dca)}</td>
-      <td><div><div style="font-weight:500">${fmt2(price)}</div>${a.change24h?`<div class="change-cell ${a.change24h>=0?'up':'down'}" style="font-size:10px">${a.change24h>=0?'▲':'▼'} ${Math.abs(a.change24h).toFixed(2)}%</div>`:''}</div></td>
-      <td style="font-weight:500">${fmt(val)}</td>
-      <td><div class="change-cell ${pv>=0?'up':'down'}">${pv>=0?'+':''}${fmt(pv)} <span style="opacity:.6">(${pvPct>=0?'+':''}${pvPct.toFixed(1)}%)</span></div></td>
-      <td style="font-size:10px;color:var(--muted)">${a.priceUpdatedAt?timeSince(a.priceUpdatedAt):'—'}</td>
-      <td><div style="display:flex;gap:5px;justify-content:flex-end" onclick="event.stopPropagation()"><button class="action-btn" onclick="refreshSingleCrypto('${a.id}')" title="Actualiser">↻</button><button class="action-btn" onclick="editAsset('${a.id}')">✎</button><button class="action-btn danger" onclick="deleteAsset('${a.id}')">✕</button></div></td></tr>`;
-    }).join('')}</tbody></table>`;
+    // Group by platform (a.cryptoPlatform or 'binance')
+    var cgroups = {};
+    list.forEach(function(a) {
+      var pk = (a.cryptoPlatform||'binance').toLowerCase().replace(/\s+/g,'_');
+      var pl = a.cryptoPlatform || 'Binance';
+      if (!cgroups[pk]) cgroups[pk] = {label: pl, items: []};
+      cgroups[pk].items.push(a);
+    });
+    var cgKeys = Object.keys(cgroups);
+    var HDR_C = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);font-size:10px"><th style="text-align:left;padding:4px 8px;font-weight:400">Coin</th><th style="text-align:right;padding:4px 8px;font-weight:400">Qté</th><th style="text-align:right;padding:4px 8px;font-weight:400">PRU</th><th style="text-align:right;padding:4px 8px;font-weight:400">Cours</th><th style="text-align:right;padding:4px 8px;font-weight:400">Valeur</th><th style="text-align:right;padding:4px 8px;font-weight:400">+/-</th></tr></thead>';
+    var ccat3 = cat3;
+    return '<div>' + cgKeys.map(function(pk) {
+      var cg = cgroups[pk];
+      var cgVal = cg.items.reduce(function(s,a){return s+(parseFloat(a.cryptoQty||0)*parseFloat(a.cryptoPrice||a.cryptoDCA||0));},0);
+      var cgCost= cg.items.reduce(function(s,a){var dca=parseFloat(a.cryptoDCA||0);return s+(parseFloat(a.cryptoQty||0)*dca);},0);
+      var cgPV  = cgVal-cgCost, cgPVp = cgCost>0?(cgPV/cgCost*100):0;
+      var crow = cg.items.map(function(a) {
+        var qty=parseFloat(a.cryptoQty||0), dca=parseFloat(a.cryptoDCA||0), price=parseFloat(a.cryptoPrice||dca);
+        var val=qty*price, cost=qty*dca, pv=val-cost, pvPct=cost>0?(pv/cost*100):0;
+        return '<tr style="border-top:1px solid var(--border)">'
+          +'<td style="padding:5px 8px;font-weight:500">'+esc(a.name)+'<div style="font-size:10px;color:var(--muted)">'+esc(a.cryptoSymbol||'')+'</div></td>'
+          +'<td style="padding:5px 8px;text-align:right">'+qty.toLocaleString('fr-FR',{maximumFractionDigits:6})+'</td>'
+          +'<td style="padding:5px 8px;text-align:right;color:var(--muted)">'+(dca>0?fmt2(dca):'—')+'</td>'
+          +'<td style="padding:5px 8px;text-align:right">'+fmt2(price)+'</td>'
+          +'<td style="padding:5px 8px;text-align:right;font-weight:600;color:var(--gold2)">'+fmt(val)+'</td>'
+          +'<td style="padding:5px 8px;text-align:right"><span class="change-cell '+(pv>=0?'up':'down')+'">'+(pv>=0?'+':'')+fmt(pv)+'<br><span style="font-size:10px">'+(pvPct>=0?'+':'')+pvPct.toFixed(1)+'%</span></span></td>'
+          +'</tr>';
+      }).join('');
+      return '<div style="border:1px solid var(--border);border-radius:10px;margin-bottom:12px">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--surface2);border-radius:10px 10px 0 0;cursor:pointer" onclick="(function(){var el=document.getElementById(\'cGrp_'+pk+'\'),ch=document.getElementById(\'cChv_'+pk+'\');if(el){el.style.display=el.style.display===\'none\'?\'block\':\'none\';ch.textContent=el.style.display===\'none\'?\'▶\':\'▼\';}})();">'
+        +'<div style="display:flex;align-items:center;gap:12px">'
+        +'<div class="cat-icon" style="background:'+ccat3.color+'18;color:'+ccat3.color+'">'+ccat3.icon+'</div>'
+        +'<div><div style="font-weight:600">'+esc(cg.label)+'</div><div style="font-size:11px;color:var(--muted)">'+cg.items.length+' actif'+(cg.items.length>1?'s':'')+'</div></div></div>'
+        +'<div style="display:flex;align-items:center;gap:16px">'
+        +'<div style="text-align:right"><div style="font-weight:600;color:var(--gold2)">'+fmt(cgVal)+'</div>'
+        +'<div style="font-size:11px" class="change-cell '+(cgPV>=0?'up':'down')+'">'+(cgPV>=0?'+':'')+fmt(cgPV)+' ('+(cgPVp>=0?'+':'')+cgPVp.toFixed(1)+'%)</div></div>'
+        +'<span id="cChv_'+pk+'" style="color:var(--muted);font-size:12px">▼</span>'
+        +'</div></div>'
+        +'<div id="cGrp_'+pk+'" style="display:block;padding:8px 0">'
+        + HDR_C +'<tbody>'+crow+'</tbody></table>'
+        +'</div></div>';
+    }).join('') + '</div>';
   }
 
   if(cat==='scpi') {
@@ -3156,6 +3234,39 @@ function _renderStructRow(s) {
 }
 
 // ── Patch meta on already-imported assets (run once on unlock) ──────────────
+function _patchCryptoPlatform() {
+  // Ensure all cryptos have a cryptoPlatform (default: 'Binance')
+  var changed = false;
+  assets.forEach(function(a) {
+    if (a.cat === 'crypto' && !a.cryptoPlatform) {
+      a.cryptoPlatform = 'Binance';
+      changed = true;
+    }
+  });
+  if (changed) { saveAll(); }
+}
+
+function _patchPEAFields() {
+  // Fix already-imported PEA assets that used wrong field names (qty→stockQty etc.)
+  var changed = false;
+  assets.forEach(function(a) {
+    if (a.cat === 'actions' && a.note && a.note.indexOf('PEA Fortuneo') !== -1) {
+      if (a.qty !== undefined && a.stockQty === undefined) {
+        a.stockQty = a.qty; delete a.qty;
+        a.stockPrice = a.price || 0; delete a.price;
+        a.stockPRU = a.pru || 0; delete a.pru;
+        a.stockTicker = a.ticker || a.stockTicker || ''; delete a.ticker;
+        a.stockAccount = 'pea';
+        a.stockExchange = 'Euronext Paris';
+        a.stockBroker = 'Fortuneo PEA';
+        a.stockBrokerGroup = 'fortuneo_pea';
+        changed = true;
+      }
+    }
+  });
+  if (changed) { saveAll(); console.log('[patrimoine] PEA fields patched'); }
+}
+
 function _patchMissingMeta() {
   var TEMPO_META = {
     rows:[
@@ -3262,9 +3373,10 @@ function importFortunePEA() {
   positions.forEach(function(p) {
     assets.push({
       id: p.id, name: p.name, cat: 'actions',
-      ticker: p.ticker, isin: p.isin,
-      qty: p.qty, price: p.price, pru: p.pru,
-      currency: p.currency, exchange: 'Euronext Paris',
+      stockTicker: p.ticker, isin: p.isin,
+      stockQty: p.qty, stockPrice: p.price, stockPRU: p.pru,
+      stockAccount: 'pea', stockExchange: 'Euronext Paris',
+      stockBroker: 'Fortuneo', stockBrokerGroup: 'fortuneo_pea',
       note: note
     });
   });
