@@ -1893,10 +1893,369 @@ function renderGlobal() {
         <div class="panel-header"><span class="panel-title">Activité récente</span></div>
         <div style="padding:0 20px" id="activityContainer">${renderActivityHTML()}</div>
       </div>
-    </div>`;
-  
-  requestAnimationFrame(()=>{ initCharts(); updateEvoChart(12); updateDonutChart(); });
+    </div>
+    ${renderPatrimoineScore(assets, total, cost, goals, allCredits)}
+    ${renderAllocCibles(assets, total)}
+    ${renderAlertes(assets, total, cost, goals, allCredits)}
+    ${renderProjection(assets, total, cost)}
+    `;
+
+  requestAnimationFrame(()=>{
+    initCharts();
+    updateEvoChart(12);
+    updateDonutChart();
+    _initScoreGauge();
+    _initProjectionChart();
+  });
 }
+
+// ════════════════════════════════════════════════════════════
+// SCORE PATRIMONIAL + AMÉLIORATIONS VUE GLOBALE
+// ════════════════════════════════════════════════════════════
+
+function _scorePatrimoine(assets, total, cost, goals, credits) {
+  if (!assets.length || !total) return { total:0, details:[] };
+
+  const cats     = {};
+  assets.forEach(a => { cats[a.cat] = (cats[a.cat]||0) + getAssetValue(a); });
+  const nbCats   = Object.keys(cats).filter(c => cats[c] > 0).length;
+  const topShare = total > 0 ? Math.max(...Object.values(cats)) / total : 1;
+  const topAsset = assets.reduce((mx,a) => {
+    const v = getAssetValue(a); return v > mx.v ? {v, name:a.name} : mx;
+  }, {v:0, name:''});
+  const topAssetShare = total > 0 ? topAsset.v / total : 1;
+
+  const pv     = total - cost;
+  const pvPct  = cost > 0 ? pv / cost * 100 : 0;
+
+  // Liquidité: livrets + cash
+  const liquid = assets.filter(a => a.cat==='livrets').reduce((s,a)=>s+getAssetValue(a),0);
+  const liquidMonths = assets.reduce((s,a)=>{
+    const m = parseFloat(a.monthlyExpenses||0); return s+m;
+  }, 0);
+  const liquidScore = liquid > 0 ? Math.min(100, liquid / Math.max(liquid*0.3, 3000) * 100) : 20;
+
+  // Diversification (4+ catégories = 100, 1 = 10)
+  const divScore = Math.min(100, Math.max(10, (nbCats-1) / 5 * 100));
+
+  // Concentration: top asset < 30% = 100, > 70% = 0
+  const concScore = Math.min(100, Math.max(0, (1 - topAssetShare) / 0.7 * 100));
+
+  // Performance: pvPct > 15% = 100, 0% = 50, négatif = 0
+  const perfScore = Math.min(100, Math.max(0, pvPct > 0 ? 50 + pvPct*3.3 : 50 + pvPct*2));
+
+  // Dette: ratio dettes/patrimoine < 20% = 100, > 80% = 0
+  const totalDettes = (credits||[]).reduce((s,c)=>s+(isNaN(getCRD(c))?0:getCRD(c)),0);
+  const debtRatio   = total > 0 ? totalDettes / total : 0;
+  const debtScore   = Math.min(100, Math.max(0, (1 - debtRatio / 0.8) * 100));
+
+  // Objectifs: nb atteints / total
+  const goalsArr  = (goals||[]);
+  const gAtt = goalsArr.filter(g => total >= parseFloat(g.amount||0)).length;
+  const goalScore = goalsArr.length ? Math.min(100, gAtt / goalsArr.length * 100) : 50;
+
+  // Weighted total
+  const weights = [
+    { label:'Diversification',   score:divScore,   w:0.22, icon:'◈', tip: nbCats+' catégories' },
+    { label:'Concentration',     score:concScore,  w:0.20, icon:'⬡', tip: (topAssetShare*100).toFixed(0)+'% sur '+topAsset.name },
+    { label:'Performance',       score:perfScore,  w:0.22, icon:'↗', tip: (pvPct>=0?'+':'')+pvPct.toFixed(1)+'% PV globale' },
+    { label:'Liquidité',         score:liquidScore,w:0.16, icon:'◎', tip: fmt(liquid)+' en livrets' },
+    { label:'Ratio dette',       score:debtScore,  w:0.12, icon:'⊖', tip: (debtRatio*100).toFixed(0)+'% dettes/patrimoine' },
+    { label:'Objectifs',         score:goalScore,  w:0.08, icon:'◯', tip: gAtt+'/'+goalsArr.length+' objectifs atteints' },
+  ];
+  const totalScore = Math.round(weights.reduce((s,d)=>s+d.score*d.w, 0));
+  return { total: totalScore, details: weights };
+}
+
+function _scoreColor(s) {
+  if (s >= 80) return 'var(--green)';
+  if (s >= 60) return 'var(--gold2)';
+  if (s >= 40) return '#e8a020';
+  return 'var(--red)';
+}
+function _scoreLetter(s) {
+  if (s >= 85) return 'A+';
+  if (s >= 75) return 'A';
+  if (s >= 65) return 'B+';
+  if (s >= 55) return 'B';
+  if (s >= 45) return 'C';
+  if (s >= 35) return 'D';
+  return 'F';
+}
+
+function renderPatrimoineScore(assets, total, cost, goals, credits) {
+  const sc = _scorePatrimoine(assets, total, cost, goals, credits);
+  const col = _scoreColor(sc.total);
+  const rows = sc.details.map(d => {
+    const bar = Math.round(d.score);
+    const dcol = _scoreColor(d.score);
+    return `<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+        <span style="font-size:12px;color:var(--fg)">${d.icon} ${d.label}</span>
+        <span style="font-size:11px;color:var(--muted)">${d.tip}</span>
+        <span style="font-size:12px;font-weight:700;color:${dcol};min-width:34px;text-align:right">${Math.round(d.score)}</span>
+      </div>
+      <div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden">
+        <div style="height:100%;width:${bar}%;background:${dcol};border-radius:3px;transition:width .6s ease"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="grid-2" style="margin-bottom:18px">
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">Score Patrimonial</span>
+        <span style="font-size:10px;color:var(--muted)">Mis à jour à chaque ouverture</span>
+      </div>
+      <div class="panel-body" style="display:flex;gap:24px;align-items:center;flex-wrap:wrap">
+        <div style="flex:0 0 auto;text-align:center">
+          <canvas id="scoreGauge" width="140" height="80"></canvas>
+          <div style="margin-top:4px">
+            <div style="font-size:36px;font-weight:800;color:${col};line-height:1">${sc.total}</div>
+            <div style="font-size:18px;font-weight:700;color:${col}">${_scoreLetter(sc.total)}</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">/ 100</div>
+          </div>
+        </div>
+        <div style="flex:1;min-width:200px">${rows}</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">Alertes & Recommandations</span>
+        <span class="panel-badge" id="alertBadge">—</span>
+      </div>
+      <div class="panel-body" id="alertesContainer" style="padding:8px 0">
+        ${renderAlertesInner(assets, total, cost, _scorePatrimoine(assets, total, cost, goals, credits))}
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderAlertesInner(assets, total, cost, sc) {
+  const alerts = [];
+  const cats = {};
+  assets.forEach(a => { cats[a.cat] = (cats[a.cat]||0) + getAssetValue(a); });
+  const nbCats = Object.keys(cats).filter(c=>cats[c]>0).length;
+  const topAsset = assets.reduce((mx,a) => { const v=getAssetValue(a); return v>mx.v?{v,name:a.name}:mx; },{v:0,name:''});
+  const topShare = total > 0 ? topAsset.v/total : 0;
+  const pvPct = cost > 0 ? (total-cost)/cost*100 : 0;
+  const liquid = assets.filter(a=>a.cat==='livrets').reduce((s,a)=>s+getAssetValue(a),0);
+  const cryptoShare = total > 0 ? (cats['crypto']||0)/total : 0;
+  const peaAssets = assets.filter(a=>a.cat==='actions'&&a.stockAccount==='pea');
+  const peaTotal  = peaAssets.reduce((s,a)=>s+getAssetValue(a),0);
+  const noPrice   = assets.filter(a=>a.cat==='actions'&&parseFloat(a.stockPrice||0)===0);
+
+  // Critical alerts
+  if (topShare > 0.5)
+    alerts.push({lvl:'danger', msg:`Concentration : <b>${topAsset.name}</b> représente ${(topShare*100).toFixed(0)}% du portefeuille`, action:'Diversifier'});
+  if (nbCats < 3)
+    alerts.push({lvl:'danger', msg:`Sous-diversification : seulement <b>${nbCats} catégorie${nbCats>1?'s':''}</b> d'actifs`, action:'Ajouter des actifs'});
+  if (liquid < 3000)
+    alerts.push({lvl:'warn', msg:`Liquidité faible : ${fmt(liquid)} en livrets — objectif min. <b>3 000 €</b>`, action:'Alimenter livrets'});
+  if (cryptoShare > 0.25)
+    alerts.push({lvl:'warn', msg:`Crypto > 25% du patrimoine (${(cryptoShare*100).toFixed(0)}%) — risque élevé`, action:'Rééquilibrer'});
+
+  // Opportunities
+  if (peaTotal < 150000)
+    alerts.push({lvl:'info', msg:`PEA Fortuneo : <b>${fmt(150000-peaTotal)}</b> de plafond restant (max 150 000 €)`, action:'Verser'});
+  if (noPrice.length > 0)
+    alerts.push({lvl:'info', msg:`${noPrice.length} action${noPrice.length>1?'s':''} sans cours — cliquez ↻ pour actualiser`, action:'Actualiser'});
+  if (pvPct > 20 && assets.filter(a=>a.cat==='per').length === 0)
+    alerts.push({lvl:'info', msg:`Bonne performance (+${pvPct.toFixed(0)}%) — avez-vous pensé au PER pour défiscaliser ?`, action:'Explorer'});
+  if (!assets.find(a=>a.cat==='immobilier'))
+    alerts.push({lvl:'info', msg:`Aucun immobilier — la SCPI ou le locatif peut compléter votre patrimoine`, action:'Explorer'});
+
+  if (!alerts.length)
+    return '<div style="padding:8px 16px;color:var(--green);font-size:13px">✅ Aucune alerte — portefeuille équilibré</div>';
+
+  // Update badge via timeout
+  setTimeout(()=>{
+    const b = document.getElementById('alertBadge');
+    if (b) { b.textContent = alerts.length; b.style.background='rgba(220,80,60,.15)'; b.style.color='var(--red)'; }
+  }, 50);
+
+  const icons = {danger:'🔴', warn:'🟡', info:'💡'};
+  return alerts.map(al => `
+    <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 16px;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px;flex:0 0 auto;margin-top:1px">${icons[al.lvl]}</span>
+      <span style="font-size:12px;color:var(--fg);flex:1;line-height:1.5">${al.msg}</span>
+    </div>`).join('');
+}
+
+function renderAllocCibles(assets, total) {
+  if (!total) return '';
+  // Target allocation (classic balanced French investor)
+  const targets = {
+    'actions':      { label:'Actions / ETF',    target:30, color:'var(--blue)' },
+    'assurance-vie':{ label:'Assurance-Vie',     target:20, color:'var(--gold2)' },
+    'per':          { label:'PER',               target:10, color:'#9b72cf' },
+    'immobilier':   { label:'Immobilier',        target:20, color:'#e07040' },
+    'scpi':         { label:'SCPI',              target:10, color:'#60a0c8' },
+    'livrets':      { label:'Livrets / Épargne', target:5,  color:'var(--green)' },
+    'crypto':       { label:'Crypto',            target:3,  color:'#f7931a' },
+    'obligations':  { label:'Obligations',       target:2,  color:'#a0a0c0' },
+  };
+  const actual = {};
+  assets.forEach(a => { actual[a.cat] = (actual[a.cat]||0) + getAssetValue(a); });
+
+  const rows = Object.entries(targets).map(([cat, t]) => {
+    const val   = actual[cat] || 0;
+    const pct   = total > 0 ? val/total*100 : 0;
+    const diff  = pct - t.target;
+    const diffColor = Math.abs(diff) < 3 ? 'var(--green)' : diff > 0 ? 'var(--gold2)' : 'var(--red)';
+    const diffLabel = Math.abs(diff) < 0.1 ? '✓' : (diff>0?'+':'')+diff.toFixed(1)+'%';
+    return `<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+        <span style="font-size:12px;color:var(--fg)">${t.label}</span>
+        <div style="display:flex;gap:12px;align-items:center">
+          <span style="font-size:11px;color:var(--muted)">${pct.toFixed(1)}% <span style="opacity:.5">/ cible ${t.target}%</span></span>
+          <span style="font-size:11px;font-weight:700;color:${diffColor};min-width:36px;text-align:right">${diffLabel}</span>
+        </div>
+      </div>
+      <div style="position:relative;height:8px;background:var(--border);border-radius:4px;overflow:visible">
+        <div style="height:100%;width:${Math.min(100,pct).toFixed(1)}%;background:${t.color};border-radius:4px;opacity:.85"></div>
+        <div style="position:absolute;top:-2px;left:${t.target}%;width:2px;height:12px;background:rgba(255,255,255,.4);border-radius:1px" title="Cible ${t.target}%"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="panel" style="margin-bottom:18px">
+    <div class="panel-header">
+      <span class="panel-title">Allocation réelle vs cible</span>
+      <span style="font-size:10px;color:var(--muted)">Cibles basées sur un profil équilibré — personnalisables</span>
+    </div>
+    <div class="panel-body" style="padding-top:12px">${rows}</div>
+  </div>`;
+}
+
+function renderProjection(assets, total, cost) {
+  if (!total) return '';
+  const pvPct = cost > 0 ? (total-cost)/cost*100 : 0;
+  // Estimate annualized return based on current portfolio mix
+  const cats = {};
+  assets.forEach(a => { cats[a.cat] = (cats[a.cat]||0) + getAssetValue(a); });
+  const expectedReturns = {
+    actions:0.08, crypto:0.15, immobilier:0.05, scpi:0.045,
+    'assurance-vie':0.04, per:0.055, livrets:0.025, obligations:0.03, autre:0.03
+  };
+  let weightedReturn = 0;
+  Object.entries(cats).forEach(([cat,val]) => {
+    weightedReturn += (val/total) * (expectedReturns[cat]||0.03);
+  });
+  weightedReturn = Math.max(0.01, Math.min(0.15, weightedReturn));
+
+  // Monthly contribution (estimate from recent transactions or 0)
+  const monthlySavings = 500; // default estimate
+
+  // Projection points: 1, 3, 5, 10, 20 years
+  const years = [1,2,3,5,10,15,20];
+  const projData = years.map(y => {
+    // FV with monthly contributions: FV = PV*(1+r)^n + PMT*((1+r)^n - 1)/r
+    const n = y * 12;
+    const r = weightedReturn / 12;
+    const fv = total * Math.pow(1+r, n) + monthlySavings * (Math.pow(1+r,n)-1)/r;
+    return { y, v: Math.round(fv) };
+  });
+
+  const fmtM = v => v >= 1000000 ? (v/1000000).toFixed(2)+'M€' : v >= 1000 ? Math.round(v/1000)+'k€' : fmt(v);
+
+  const cards = projData.filter(p => [1,5,10,20].includes(p.y)).map(p => `
+    <div style="text-align:center;padding:12px 8px;background:var(--surface2);border-radius:8px;flex:1">
+      <div style="font-size:10px;color:var(--muted);margin-bottom:4px">${p.y} an${p.y>1?'s':''}</div>
+      <div style="font-size:18px;font-weight:700;color:var(--gold2)">${fmtM(p.v)}</div>
+      <div style="font-size:10px;color:var(--green)">+${Math.round((p.v-total)/total*100)}%</div>
+    </div>`).join('');
+
+  const canvasData = JSON.stringify(projData.map(p=>({y:p.y, v:p.v})));
+
+  return `<div class="panel" style="margin-bottom:18px">
+    <div class="panel-header">
+      <span class="panel-title">Projection patrimoniale</span>
+      <span style="font-size:10px;color:var(--muted)">
+        Rendement estimé ${(weightedReturn*100).toFixed(1)}%/an · +500€/mois · Non garanti
+      </span>
+    </div>
+    <div class="panel-body">
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">${cards}</div>
+      <div style="height:120px"><canvas id="projChart"></canvas></div>
+    </div>
+  </div>
+  <script>window._projData=${canvasData};<\/script>`;
+}
+
+function renderAlertes() { return ''; } // Merged into renderPatrimoineScore
+
+function _initScoreGauge() {
+  const canvas = document.getElementById('scoreGauge');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const sc   = parseInt(canvas.closest('.panel').querySelector('[style*="font-size:36px"]')?.textContent || '0');
+  const col  = _scoreColor(sc);
+  const W = 140, H = 80;
+  ctx.clearRect(0, 0, W, H);
+
+  // Arc background
+  ctx.beginPath();
+  ctx.arc(70, 70, 55, Math.PI, 2*Math.PI, false);
+  ctx.strokeStyle = 'rgba(255,255,255,.08)';
+  ctx.lineWidth = 12;
+  ctx.stroke();
+
+  // Arc value
+  const angle = Math.PI + (sc/100) * Math.PI;
+  ctx.beginPath();
+  ctx.arc(70, 70, 55, Math.PI, angle, false);
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 12;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+
+  // Tick marks
+  for (let i=0; i<=10; i++) {
+    const a = Math.PI + i*Math.PI/10;
+    const ix = 70 + 44*Math.cos(a), iy = 70 + 44*Math.sin(a);
+    const ox = 70 + 52*Math.cos(a), oy = 70 + 52*Math.sin(a);
+    ctx.beginPath(); ctx.moveTo(ox,oy); ctx.lineTo(ix,iy);
+    ctx.strokeStyle = 'rgba(255,255,255,.15)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+}
+
+function _initProjectionChart() {
+  const canvas = document.getElementById('projChart');
+  if (!canvas || typeof Chart === 'undefined') return;
+  if (!window._projData) return;
+  const data = window._projData;
+  try {
+    new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: data.map(p => p.y + 'a'),
+        datasets: [{
+          data: data.map(p => p.v),
+          borderColor: 'var(--gold2)',
+          backgroundColor: 'rgba(201,168,76,.12)',
+          fill: true,
+          tension: 0.4,
+          pointRadius: 3,
+          pointBackgroundColor: 'var(--gold2)',
+          borderWidth: 2,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend:{display:false}, tooltip:{
+          callbacks:{label: ctx => ' ' + Math.round(ctx.raw/1000) + 'k €'}
+        }},
+        scales: {
+          x: { grid:{color:'rgba(255,255,255,.05)'}, ticks:{color:'var(--muted)',font:{size:10}} },
+          y: { grid:{color:'rgba(255,255,255,.05)'}, ticks:{
+            color:'var(--muted)', font:{size:10},
+            callback: v => v>=1000000?(v/1000000).toFixed(1)+'M':Math.round(v/1000)+'k'
+          }}
+        }
+      }
+    });
+  } catch(e) { console.error('projChart',e); }
+}
+
 
 let chartPeriod = 12;
 function setChartP(m, btn) {
