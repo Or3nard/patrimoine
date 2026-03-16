@@ -1464,7 +1464,7 @@ async function fetchAllStockPrices() {
     const ticker = a.stockTicker || '';
     if (!ticker) continue;
     // Yahoo Finance suffix: European stocks need .PA, .AS etc — try raw ticker first, then suffixed
-    const tickers = [ticker, ticker+'.PA', ticker+'.AS', ticker+'.L'];
+    const tickers = a.stockYahooTicker ? [a.stockYahooTicker, ticker, ticker+'.PA', ticker+'.AS', ticker+'.L'] : [ticker, ticker+'.PA', ticker+'.AS', ticker+'.L'];
     let got = false;
     for (const t of tickers) {
       const proxies = [
@@ -1497,6 +1497,51 @@ async function fetchAllStockPrices() {
   if (updated.length) { saveAll(); }
   return updated;
 }
+
+async function refreshGroupPrices(ids) {
+  toast('↻ Actualisation en cours…');
+  var updated = 0;
+  for (var i=0; i<ids.length; i++) {
+    var a = assets.find(function(x){return x.id===ids[i];});
+    if (!a) continue;
+    var ticker = a.stockYahooTicker || a.stockTicker || '';
+    if (!ticker) continue;
+    var tickers = a.stockYahooTicker ? [a.stockYahooTicker] : [ticker, ticker+'.PA', ticker+'.AS', ticker+'.L'];
+    var got = false;
+    for (var ti=0; ti<tickers.length && !got; ti++) {
+      var urls = [
+        'https://query1.finance.yahoo.com/v8/finance/chart/'+tickers[ti]+'?interval=1d&range=2d',
+        'https://query2.finance.yahoo.com/v8/finance/chart/'+tickers[ti]+'?interval=1d&range=2d'
+      ];
+      for (var ui=0; ui<urls.length && !got; ui++) {
+        try {
+          var r = await fetch(urls[ui]);
+          if (!r.ok) continue;
+          var d = await r.json();
+          var meta = d?.chart?.result?.[0]?.meta;
+          var price = meta?.regularMarketPrice;
+          if (price && price > 0) {
+            var prev = meta?.chartPreviousClose || price;
+            a.stockPrice = price;
+            a.change24h = prev > 0 ? ((price - prev) / prev * 100) : 0;
+            a.priceUpdatedAt = new Date().toISOString();
+            a.stockYahooTicker = tickers[ti];
+            updated++;
+            got = true;
+          }
+        } catch(e) {}
+      }
+    }
+  }
+  if (updated > 0) {
+    saveAll();
+    renderSubPage(currentSubPage);
+    toast('✅ ' + updated + ' cours mis à jour');
+  } else {
+    toast('⚠ Aucun cours actualisé (CORS Yahoo?)');
+  }
+}
+
 
 async function refreshSinglePrice(assetId) {
   const a = assets.find(function(x){return x.id===assetId;});
@@ -1876,7 +1921,7 @@ function renderAllAssetsRows(list, total) {
 }
 
 function getAssetSubLabel(a) {
-  if(a.cat==='actions') return (a.stockTicker?a.stockTicker+' · ':'')+(a.stockAccount||'').toUpperCase();
+  if(a.cat==='actions') return (a.stockTicker?a.stockTicker+' · ':'')+[(a.stockBroker||''),(a.stockAccount||'').toUpperCase()].filter(Boolean).join(' — ');
   if(a.cat==='crypto')  return a.cryptoPlatform||'';
   if(a.cat==='livrets') return LIVRET_META[a.livretType]?.label||(a.livretType||'');
   if(a.cat==='scpi')    return a.scpiMgr||'';
@@ -2035,7 +2080,7 @@ function renderCatTable(cat, list, total) {
       <td><div style="font-weight:500">${fmt2(price)}</div></td>
       <td style="font-weight:600;color:var(--gold2)">${fmt(val)}</td>
       <td><span class="change-cell ${pv>=0?'up':'down'}">${pv>=0?'+':''}${fmt(pv)}<br><span style="font-size:10px">${pvPct>=0?'+':''}${pvPct.toFixed(1)}%</span></span></td>
-      <td style="color:var(--muted);font-size:10px">${a.priceUpdatedAt ? new Date(a.priceUpdatedAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}) : '—'}</td>
+      <td style="color:var(--muted);font-size:10px">${a.priceUpdatedAt ? (function(){var d=new Date(a.priceUpdatedAt),t=new Date();return d.toDateString()===t.toDateString()?d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'});})() : '—'}</td>
       <td><div style="display:flex;gap:5px" onclick="event.stopPropagation()"><button class="action-btn" onclick="refreshSinglePrice('${a.id}')">↻</button><button class="action-btn" onclick="editAsset('${a.id}')">✎</button><button class="action-btn danger" onclick="deleteAsset('${a.id}')">✕</button></div></td></tr>`;
     }).join('')}</tbody></table>`;
     }
@@ -2048,7 +2093,7 @@ function renderCatTable(cat, list, total) {
       var gPV  = gVal - gCost, gPVp = gCost>0?(gPV/gCost*100):0;
       var rows = g.items.map(function(a) {
         var qty=parseFloat(a.stockQty||0), pru=parseFloat(a.stockPRU||0), price=parseFloat(a.stockPrice||pru);
-        var val=qty*price, cost=qty*(pru||price), pv=val-cost, pvPct=cost>0?(pv/cost*100):0;
+        var val=qty*price, hasPRU=(pru>0), cost=hasPRU?qty*pru:qty*price, pv=hasPRU?val-cost:0, pvPct=cost>0&&hasPRU?(pv/cost*100):0;
         return '<tr style="border-top:1px solid var(--border)">'
           +'<td style="padding:5px 8px;font-weight:500">'+esc(a.name)+'<div style="font-size:10px;color:var(--muted)">'+esc(a.stockTicker||'')+'</div></td>'
           +'<td style="padding:5px 8px;font-family:\'DM Mono\',monospace;font-size:10px;color:var(--muted)">'+esc(a.isin||'—')+'</td>'
@@ -2056,7 +2101,10 @@ function renderCatTable(cat, list, total) {
           +'<td style="padding:5px 8px;text-align:right;color:var(--muted)">'+(pru>0?fmt2(pru):'NC')+'</td>'
           +'<td style="padding:5px 8px;text-align:right">'+fmt2(price)+'</td>'
           +'<td style="padding:5px 8px;text-align:right;font-weight:600;color:var(--gold2)">'+fmt(val)+'</td>'
-          +'<td style="padding:5px 8px;text-align:right"><span class="change-cell '+(pv>=0?'up':'down')+'">'+(pv>=0?'+':'')+fmt(pv)+'<br><span style="font-size:10px">'+(pvPct>=0?'+':'')+pvPct.toFixed(1)+'%</span></span></td>'
+          +'<td style="padding:5px 8px;text-align:right">'
+          +(!hasPRU?'<span style="color:var(--muted)">—</span>'
+          :'<span class="change-cell '+(pv>=0?'up':'down')+'">'+(pv>=0?'+':'')+fmt(pv)+'<br><span style="font-size:10px">'+(pvPct>=0?'+':'')+pvPct.toFixed(1)+'%</span></span>')
+          +'</td>'
           +'</tr>';
       }).join('');
       return '<div style="border:1px solid var(--border);border-radius:10px;margin-bottom:12px">'
@@ -2067,6 +2115,7 @@ function renderCatTable(cat, list, total) {
         +'<div style="display:flex;align-items:center;gap:16px">'
         +'<div style="text-align:right"><div style="font-weight:600;color:var(--gold2)">'+fmt(gVal)+'</div>'
         +'<div style="font-size:11px" class="change-cell '+(gPV>=0?'up':'down')+'">'+(gPV>=0?'+':'')+fmt(gPV)+' ('+(gPVp>=0?'+':'')+gPVp.toFixed(1)+'%)</div></div>'
+        +'<button class="btn btn-ghost" style="padding:4px 8px;font-size:11px" onclick="event.stopPropagation();refreshGroupPrices('+JSON.stringify(g.items.map(function(x){return x.id;}))+')" title="Actualiser les cours de ce groupe">↻</button>'
         +'<span id="actChv_'+gk+'" style="color:var(--muted);font-size:12px">▼</span>'
         +'</div></div>'
         +'<div id="actGrp_'+gk+'" style="display:block;padding:8px 0">'
@@ -2478,13 +2527,22 @@ function deleteCredit(id) {
 
 // ── Actualisation des prix ────────────────────────────
 async function refreshAllPrices() {
-  await fetchAllCryptoPrices(); await fetchAllStockPrices(); saveAll(); renderSubPage(currentSubPage); toast('✅ Cours actualisés');
+  toast('↻ Actualisation de tous les cours…');
+  await fetchAllCryptoPrices();
+  var updated = await fetchAllStockPrices();
+  saveAll();
+  renderSubPage(currentSubPage);
+  buildSubNav();
+  toast('✅ Cours actualisés' + (updated&&updated.length?' ('+updated.length+' actions)':''));
 }
 async function refreshCatPrices(cat) {
+  toast('↻ Actualisation…');
   if(cat==='crypto') await fetchAllCryptoPrices();
   if(cat==='actions') await fetchAllStockPrices();
   if(cat==='per'||cat==='assurance-vie'){await fetchAllCryptoPrices();await fetchAllStockPrices();}
-  saveAll(); renderSubPage(currentSubPage); toast('✅ Cours actualisés');
+  saveAll();
+  renderSubPage(currentSubPage);
+  toast('✅ Cours actualisés');
 }
 
 // ── Modal actif ───────────────────────────────────────
@@ -3330,6 +3388,13 @@ function _patchPEAFields() {
         a.stockBrokerGroup = 'fortuneo_pea';
         changed = true;
       }
+      // Set Yahoo ticker for known Euronext stocks
+      if (!a.stockYahooTicker && a.stockTicker) {
+        var _ymap = {'PCAM':'PCAM.PA','ASML':'ASML.AS','EWLD':'EWLD.PA','EN':'EN.PA',
+          'CAN':'CAN.PA','FGR':'FGR.PA','EL':'EL.PA','MC':'MC.PA',
+          'SGO':'SGO.PA','STLAP':'STLAP.PA','TTE':'TTE.PA','VIE':'VIE.PA'};
+        if (_ymap[a.stockTicker]) { a.stockYahooTicker = _ymap[a.stockTicker]; changed = true; }
+      }
     }
     // Any action without brokerGroup: derive from broker or account
     if (!a.stockBrokerGroup) {
@@ -3395,7 +3460,7 @@ function importLinxeaSpirit2() {
     id:'asset_linxea_spirit2',
     name:'Linxea Spirit 2',
     cat:'assurance-vie',
-    date:'',
+    date:'2024-01-01',
     avInsurer:'Spirica',
     avType:'uc',
     avCost:3000,
@@ -3431,23 +3496,23 @@ function importFortunePEA() {
   var today = new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
   var note = 'PEA Fortuneo 018892038016 · Importé le '+today+' · Cours au 13/03/2026';
   var positions = [
-    {id:'pea_pcam',  name:'Amundi PEA MONDE (MSCI World) UCITS ETF Acc EUR',  ticker:'PCAM',   isin:'FR001400U5Q4', qty:17,  price:5.431,   pru:4.9265,  currency:'EUR'},
-    {id:'pea_asml',  name:'ASML Holding NV',                                   ticker:'ASML',   isin:'NL0010273215', qty:1,   price:1178.0,  pru:883.1,   currency:'EUR'},
-    {id:'pea_ewld',  name:'Amundi MSCI World Swap UCITS ETF EUR Acc',          ticker:'EWLD',   isin:'LU2655993207', qty:5,   price:36.127,  pru:29.876,  currency:'EUR'},
-    {id:'pea_en',    name:'Bouygues',                                           ticker:'EN',     isin:'FR0000120503', qty:3,   price:49.8,    pru:0,       currency:'EUR'},
-    {id:'pea_can',   name:'Canal Plus SA',                                      ticker:'CAN',    isin:'FR001400T0D6', qty:2,   price:2.571,   pru:3.348,   currency:'EUR'},
-    {id:'pea_fgr',   name:'Eiffage',                                            ticker:'FGR',    isin:'FR0000130452', qty:2,   price:134.65,  pru:0,       currency:'EUR'},
-    {id:'pea_el',    name:'EssilorLuxottica',                                   ticker:'EL',     isin:'FR0000121667', qty:1,   price:204.7,   pru:251.14,  currency:'EUR'},
-    {id:'pea_mc',    name:'LVMH Moët Hennessy Louis Vuitton',                  ticker:'MC',     isin:'FR0000121014', qty:2,   price:485.35,  pru:482.365, currency:'EUR'},
-    {id:'pea_sgo',   name:'Saint-Gobain',                                       ticker:'SGO',    isin:'FR0000125007', qty:5,   price:71.66,   pru:0,       currency:'EUR'},
-    {id:'pea_stlap', name:'Stellantis NV',                                      ticker:'STLAP',  isin:'NL00150001Q9', qty:37,  price:5.83,    pru:6.9338,  currency:'EUR'},
-    {id:'pea_tte',   name:'TotalEnergies SE',                                   ticker:'TTE',    isin:'FR0000120271', qty:7,   price:71.91,   pru:0,       currency:'EUR'},
-    {id:'pea_vie',   name:'Veolia Environnement',                               ticker:'VIE',    isin:'FR0000124141', qty:10,  price:33.0,    pru:0,       currency:'EUR'},
+    {id:'pea_pcam',  name:'Amundi PEA MONDE (MSCI World) UCITS ETF Acc EUR',  ticker:'PCAM',   yahooTicker:'PCAM.PA',   isin:'FR001400U5Q4', qty:17,  price:5.431,   pru:4.9265,  currency:'EUR'},
+    {id:'pea_asml',  name:'ASML Holding NV',                                   ticker:'ASML',   yahooTicker:'ASML.AS',   isin:'NL0010273215', qty:1,   price:1178.0,  pru:883.1,   currency:'EUR'},
+    {id:'pea_ewld',  name:'Amundi MSCI World Swap UCITS ETF EUR Acc',          ticker:'EWLD',   yahooTicker:'EWLD.PA',   isin:'LU2655993207', qty:5,   price:36.127,  pru:29.876,  currency:'EUR'},
+    {id:'pea_en',    name:'Bouygues',                                           ticker:'EN',   yahooTicker:'EN.PA',     isin:'FR0000120503', qty:3,   price:49.8,    pru:0,       currency:'EUR'},
+    {id:'pea_can',   name:'Canal Plus SA',                                      ticker:'CAN',   yahooTicker:'CAN.PA',    isin:'FR001400T0D6', qty:2,   price:2.571,   pru:3.348,   currency:'EUR'},
+    {id:'pea_fgr',   name:'Eiffage',                                            ticker:'FGR',   yahooTicker:'FGR.PA',    isin:'FR0000130452', qty:2,   price:134.65,  pru:0,       currency:'EUR'},
+    {id:'pea_el',    name:'EssilorLuxottica',                                   ticker:'EL',   yahooTicker:'EL.PA',     isin:'FR0000121667', qty:1,   price:204.7,   pru:251.14,  currency:'EUR'},
+    {id:'pea_mc',    name:'LVMH Moët Hennessy Louis Vuitton',                  ticker:'MC',   yahooTicker:'MC.PA',     isin:'FR0000121014', qty:2,   price:485.35,  pru:482.365, currency:'EUR'},
+    {id:'pea_sgo',   name:'Saint-Gobain',                                       ticker:'SGO',   yahooTicker:'SGO.PA',    isin:'FR0000125007', qty:5,   price:71.66,   pru:0,       currency:'EUR'},
+    {id:'pea_stlap', name:'Stellantis NV',                                      ticker:'STLAP',   yahooTicker:'STLAP.PA',  isin:'NL00150001Q9', qty:37,  price:5.83,    pru:6.9338,  currency:'EUR'},
+    {id:'pea_tte',   name:'TotalEnergies SE',                                   ticker:'TTE',   yahooTicker:'TTE.PA',    isin:'FR0000120271', qty:7,   price:71.91,   pru:0,       currency:'EUR'},
+    {id:'pea_vie',   name:'Veolia Environnement',                               ticker:'VIE',   yahooTicker:'VIE.PA',    isin:'FR0000124141', qty:10,  price:33.0,    pru:0,       currency:'EUR'},
   ];
   positions.forEach(function(p) {
     assets.push({
       id: p.id, name: p.name, cat: 'actions',
-      stockTicker: p.ticker, isin: p.isin,
+      stockTicker: p.ticker, stockYahooTicker: p.yahooTicker||'', isin: p.isin,
       stockQty: p.qty, stockPrice: p.price, stockPRU: p.pru,
       stockAccount: 'pea', stockExchange: 'Euronext Paris',
       stockBroker: 'Fortuneo', stockBrokerGroup: 'fortuneo_pea',
