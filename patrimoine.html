@@ -1456,45 +1456,115 @@ async function fetchAllCryptoPrices() {
   } catch(e) { toast('⚠ CoinGecko indisponible — réessayez plus tard'); }
 }
 
+// ── Shared helpers ────────────────────────────────────────
+async function _fetchYahoo(yahooTicker) {
+  // 3-layer CORS cascade:
+  // 1. Direct Yahoo (works on Firefox / some networks)
+  // 2. allorigins.win proxy (free, no key needed)
+  // 3. Stooq.com CSV (reliable CORS, covers most European stocks)
+  const yUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/'+yahooTicker+'?interval=1d&range=2d';
+  const yUrl2= 'https://query2.finance.yahoo.com/v8/finance/chart/'+yahooTicker+'?interval=1d&range=2d';
+  const proxied1 = 'https://api.allorigins.win/raw?url='+encodeURIComponent(yUrl);
+  const proxied2 = 'https://corsproxy.io/?url='+encodeURIComponent(yUrl);
+
+  // Try Yahoo direct (fast, no proxy latency)
+  for (const url of [yUrl, yUrl2]) {
+    try {
+      const r = await fetch(url, {signal: AbortSignal.timeout(4000)});
+      if (!r.ok) continue;
+      const d = await r.json();
+      const meta = d?.chart?.result?.[0]?.meta;
+      const price = meta?.regularMarketPrice;
+      if (price && price > 0) {
+        const prev = meta?.chartPreviousClose || meta?.previousClose || price;
+        return { price, change: prev>0 ? (price-prev)/prev*100 : 0, src:'yahoo' };
+      }
+    } catch(e) {}
+  }
+
+  // Try CORS proxies for Yahoo JSON
+  for (const url of [proxied1, proxied2]) {
+    try {
+      const r = await fetch(url, {signal: AbortSignal.timeout(6000)});
+      if (!r.ok) continue;
+      const d = await r.json();
+      const meta = d?.chart?.result?.[0]?.meta;
+      const price = meta?.regularMarketPrice;
+      if (price && price > 0) {
+        const prev = meta?.chartPreviousClose || meta?.previousClose || price;
+        return { price, change: prev>0 ? (price-prev)/prev*100 : 0, src:'proxy' };
+      }
+    } catch(e) {}
+  }
+
+  return null;
+}
+
+async function _fetchStooq(yahooTicker) {
+  // Stooq uses lowercase ticker with dot for exchange (mc.pa, asml.nl, etc.)
+  // Yahoo suffix maps: .PA→.pl... actually stooq uses: mc.wa for Warsaw, mc.pl for Poland
+  // Euronext Paris = ticker.pa on stooq, Amsterdam = ticker.nl
+  const stooqMap = {'.PA':'.pa', '.AS':'.nl', '.L':'.uk', '.DE':'.de', '.MI':'.it', '.MC':'.mc'};
+  let stooqTicker = yahooTicker.toLowerCase();
+  for (const [y, s] of Object.entries(stooqMap)) {
+    stooqTicker = stooqTicker.replace(y.toLowerCase(), s);
+  }
+  const url = 'https://stooq.com/q/l/?s='+stooqTicker+'&f=sd2t2ohlcv&h&e=csv';
+  const proxied = 'https://api.allorigins.win/raw?url='+encodeURIComponent(url);
+  for (const u of [url, proxied]) {
+    try {
+      const r = await fetch(u, {signal: AbortSignal.timeout(6000)});
+      if (!r.ok) continue;
+      const text = await r.text();
+      const lines = text.trim().split('\n');
+      if (lines.length < 2) continue;
+      const cols = lines[1].split(',');
+      // CSV: Symbol,Date,Time,Open,High,Low,Close,Volume
+      const close = parseFloat(cols[6]);
+      const open  = parseFloat(cols[3]);
+      if (close && close > 0 && close !== 0.01) { // stooq returns 0.01 for N/A
+        const change = open > 0 ? (close-open)/open*100 : 0;
+        return { price: close, change, src:'stooq' };
+      }
+    } catch(e) {}
+  }
+  return null;
+}
+
+async function _fetchPriceForTicker(stockTicker, yahooTicker) {
+  // Try known yahoo ticker first, then fallback variants
+  const toTry = yahooTicker
+    ? [yahooTicker, stockTicker, stockTicker+'.PA', stockTicker+'.AS', stockTicker+'.L', stockTicker+'.DE']
+    : [stockTicker, stockTicker+'.PA', stockTicker+'.AS', stockTicker+'.L', stockTicker+'.DE'];
+  const unique = [...new Set(toTry)].filter(Boolean);
+
+  for (const t of unique) {
+    const res = await _fetchYahoo(t);
+    if (res) return { ...res, usedTicker: t };
+  }
+  // Last resort: Stooq with each ticker variant
+  for (const t of unique) {
+    const res = await _fetchStooq(t);
+    if (res) return { ...res, usedTicker: t };
+  }
+  return null;
+}
+
 async function fetchAllStockPrices() {
-  const list = assets.filter(function(a){ return a.cat==='actions' && (a.stockTicker||a.isin); });
-  if (!list.length) return;
+  const list = assets.filter(function(a){ return a.cat==='actions' && (a.stockTicker||a.stockYahooTicker); });
+  if (!list.length) return [];
   const updated = [];
   for (const a of list) {
-    const ticker = a.stockTicker || '';
-    if (!ticker) continue;
-    // Yahoo Finance suffix: European stocks need .PA, .AS etc — try raw ticker first, then suffixed
-    const tickers = a.stockYahooTicker ? [a.stockYahooTicker, ticker, ticker+'.PA', ticker+'.AS', ticker+'.L'] : [ticker, ticker+'.PA', ticker+'.AS', ticker+'.L'];
-    let got = false;
-    for (const t of tickers) {
-      const proxies = [
-        'https://query1.finance.yahoo.com/v8/finance/chart/'+t+'?interval=1d&range=2d',
-        'https://query2.finance.yahoo.com/v8/finance/chart/'+t+'?interval=1d&range=2d'
-      ];
-      for (const url of proxies) {
-        try {
-          const r = await fetch(url);
-          if (!r.ok) continue;
-          const d = await r.json();
-          const meta = d?.chart?.result?.[0]?.meta;
-          const price = meta?.regularMarketPrice;
-          if (price && price > 0) {
-            const prev = meta?.chartPreviousClose || meta?.previousClose || price;
-            a.stockPrice = price;
-            a.change24h = prev > 0 ? ((price - prev) / prev * 100) : 0;
-            a.priceUpdatedAt = new Date().toISOString();
-            a.stockYahooTicker = t;
-            updated.push(a.name);
-            got = true;
-            break;
-          }
-        } catch(e) {}
-        if (got) break;
-      }
-      if (got) break;
+    const res = await _fetchPriceForTicker(a.stockTicker||'', a.stockYahooTicker||'');
+    if (res) {
+      a.stockPrice      = res.price;
+      a.change24h       = res.change;
+      a.priceUpdatedAt  = new Date().toISOString();
+      if (res.usedTicker) a.stockYahooTicker = res.usedTicker;
+      updated.push(a.name);
     }
   }
-  if (updated.length) { saveAll(); }
+  if (updated.length) saveAll();
   return updated;
 }
 
@@ -1504,33 +1574,13 @@ async function refreshGroupPrices(ids) {
   for (var i=0; i<ids.length; i++) {
     var a = assets.find(function(x){return x.id===ids[i];});
     if (!a) continue;
-    var ticker = a.stockYahooTicker || a.stockTicker || '';
-    if (!ticker) continue;
-    var tickers = a.stockYahooTicker ? [a.stockYahooTicker] : [ticker, ticker+'.PA', ticker+'.AS', ticker+'.L'];
-    var got = false;
-    for (var ti=0; ti<tickers.length && !got; ti++) {
-      var urls = [
-        'https://query1.finance.yahoo.com/v8/finance/chart/'+tickers[ti]+'?interval=1d&range=2d',
-        'https://query2.finance.yahoo.com/v8/finance/chart/'+tickers[ti]+'?interval=1d&range=2d'
-      ];
-      for (var ui=0; ui<urls.length && !got; ui++) {
-        try {
-          var r = await fetch(urls[ui]);
-          if (!r.ok) continue;
-          var d = await r.json();
-          var meta = d?.chart?.result?.[0]?.meta;
-          var price = meta?.regularMarketPrice;
-          if (price && price > 0) {
-            var prev = meta?.chartPreviousClose || price;
-            a.stockPrice = price;
-            a.change24h = prev > 0 ? ((price - prev) / prev * 100) : 0;
-            a.priceUpdatedAt = new Date().toISOString();
-            a.stockYahooTicker = tickers[ti];
-            updated++;
-            got = true;
-          }
-        } catch(e) {}
-      }
+    const res = await _fetchPriceForTicker(a.stockTicker||'', a.stockYahooTicker||'');
+    if (res) {
+      a.stockPrice     = res.price;
+      a.change24h      = res.change;
+      a.priceUpdatedAt = new Date().toISOString();
+      if (res.usedTicker) a.stockYahooTicker = res.usedTicker;
+      updated++;
     }
   }
   if (updated > 0) {
@@ -1538,47 +1588,27 @@ async function refreshGroupPrices(ids) {
     renderSubPage(currentSubPage);
     toast('✅ ' + updated + ' cours mis à jour');
   } else {
-    toast('⚠ Aucun cours actualisé (CORS Yahoo?)');
+    toast('⚠ Aucun cours récupéré — vérifiez les tickers');
   }
 }
-
 
 async function refreshSinglePrice(assetId) {
   const a = assets.find(function(x){return x.id===assetId;});
   if (!a) return;
-  const ticker = a.stockTicker || a.ticker || '';
-  if (!ticker) { toast('⚠ Pas de ticker défini pour ' + a.name); return; }
-  const btn = document.querySelector('[onclick*="refreshSinglePrice(\''+assetId+'\'"]');
-  if (btn) btn.textContent = '…';
-  const tickers = [ticker, ticker+'.PA', ticker+'.AS', ticker+'.L'];
-  for (const t of tickers) {
-    const urls = [
-      'https://query1.finance.yahoo.com/v8/finance/chart/'+t+'?interval=1d&range=2d',
-      'https://query2.finance.yahoo.com/v8/finance/chart/'+t+'?interval=1d&range=2d'
-    ];
-    for (const url of urls) {
-      try {
-        const r = await fetch(url);
-        if (!r.ok) continue;
-        const d = await r.json();
-        const meta = d?.chart?.result?.[0]?.meta;
-        const price = meta?.regularMarketPrice;
-        if (price && price > 0) {
-          const prev = meta?.chartPreviousClose || price;
-          a.stockPrice = price;
-          a.change24h = prev > 0 ? ((price - prev) / prev * 100) : 0;
-          a.priceUpdatedAt = new Date().toISOString();
-          a.stockYahooTicker = t;
-          saveAll();
-          renderSubPage(currentSubPage);
-          toast('✅ ' + a.name + ' → ' + price.toLocaleString('fr-FR', {minimumFractionDigits:2}) + ' €');
-          return;
-        }
-      } catch(e) {}
-    }
+  if (!a.stockTicker && !a.stockYahooTicker) { toast('⚠ Pas de ticker pour ' + a.name); return; }
+  // (button state managed by page re-render)
+  const res = await _fetchPriceForTicker(a.stockTicker||'', a.stockYahooTicker||'');
+  if (res) {
+    a.stockPrice     = res.price;
+    a.change24h      = res.change;
+    a.priceUpdatedAt = new Date().toISOString();
+    if (res.usedTicker) a.stockYahooTicker = res.usedTicker;
+    saveAll();
+    renderSubPage(currentSubPage);
+    toast('✅ ' + a.name + ' → ' + res.price.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' € (via ' + res.src + ')');
+  } else {
+    toast('⚠ Cours introuvable pour ' + (a.stockTicker||a.stockYahooTicker));
   }
-  toast('⚠ Cours introuvable pour ' + ticker);
-  if (btn) btn.textContent = '↻';
 }
 
 
