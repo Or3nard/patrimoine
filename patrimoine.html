@@ -1875,13 +1875,19 @@ function renderGlobal() {
       </div>
     </div>
     <div class="panel" style="margin-bottom:18px">
-      <div class="panel-header"><span class="panel-title">Tous les actifs</span><span class="panel-badge">${assets.length} actif${assets.length>1?'s':''}</span></div>
-      <div style="overflow-x:auto">
-        <table class="data-table">
-          <thead><tr><th style="padding-left:18px">Actif</th><th>Catégorie</th><th>Coût</th><th>Valeur</th><th>+/- value</th><th>% du patrimoine</th><th>Actions</th></tr></thead>
-          <tbody>${renderAllAssetsRows(assets, total)}</tbody>
-        </table>
-        ${!assets.length?'<div class="empty-state"><div class="big">◈</div><div>Aucun actif enregistré</div></div>':''}
+      <div class="panel-header">
+        <span class="panel-title">Tous les actifs</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="panel-badge">${assets.length} actif${assets.length>1?'s':''}</span>
+          <button class="btn btn-ghost" style="padding:3px 10px;font-size:10px" onclick="toggleAllGlobalAccordions(true)">Tout ouvrir</button>
+          <button class="btn btn-ghost" style="padding:3px 10px;font-size:10px" onclick="toggleAllGlobalAccordions(false)">Tout fermer</button>
+        </div>
+      </div>
+      <div style="padding:12px 16px">
+        ${!assets.length
+          ? '<div class="empty-state"><div class="big">◈</div><div>Aucun actif enregistré</div></div>'
+          : renderAllAssetsAccordion(assets, total)
+        }
       </div>
     </div>
     <div class="grid-2">
@@ -2294,19 +2300,138 @@ function updateDonutChart() {
 }
 
 function renderAllAssetsRows(list, total) {
-  if(!list.length) return '';
-  return list.map(a=>{
-    const v=getAssetValue(a), c=getAssetCost(a), pv=v-c, pvPct=c>0?(pv/c*100):0, share=total>0?(v/total*100):0;
-    const cat=CAT[a.cat]||CAT.autre;
-    return `<tr class="data-row" onclick="editAsset('${a.id}')">
-      <td style="padding-left:18px"><div class="name-cell"><div class="cat-icon" style="background:${cat.color}18;color:${cat.color}">${cat.icon}</div><div><div class="name-main">${esc(a.name)}</div><div class="name-sub">${getAssetSubLabel(a)}</div></div></div></td>
-      <td><span class="pill">${cat.label}</span></td>
-      <td>${fmt(c)}</td><td style="font-weight:500">${fmt(v)}</td>
-      <td><div class="change-cell ${pv>=0?'up':'down'}">${pv>=0?'▲':'▼'} ${fmt(Math.abs(pv))} <span style="opacity:.6">(${pvPct>=0?'+':''}${pvPct.toFixed(1)}%)</span></div></td>
-      <td><div style="min-width:75px"><div style="font-size:10px;color:var(--muted);margin-bottom:4px">${share.toFixed(1)}%</div><div class="progress-track"><div class="progress-fill" style="width:${share}%;background:${cat.color}"></div></div></div></td>
-      <td><div style="display:flex;gap:5px;justify-content:flex-end" onclick="event.stopPropagation()"><button class="action-btn" onclick="editAsset('${a.id}')">✎</button><button class="action-btn danger" onclick="deleteAsset('${a.id}')">✕</button></div></td>
-    </tr>`;
+  // kept for backward compat — delegates to accordion
+  return renderAllAssetsAccordion(list, total);
+}
+
+function renderAllAssetsAccordion(list, total) {
+  if (!list.length) return '';
+
+  // Group by category, ordered by total value desc
+  const catOrder = ['actions','assurance-vie','per','immobilier','scpi','livrets','crypto','obligations','autre'];
+  const groups = {};
+  list.forEach(a => {
+    const k = a.cat || 'autre';
+    if (!groups[k]) groups[k] = [];
+    groups[k].push(a);
+  });
+
+  // Sort cats by value desc
+  const sortedCats = Object.keys(groups).sort((a, b) => {
+    const va = groups[a].reduce((s,x)=>s+getAssetValue(x),0);
+    const vb = groups[b].reduce((s,x)=>s+getAssetValue(x),0);
+    return vb - va;
+  });
+
+  return sortedCats.map((catKey, gi) => {
+    const cat3   = CAT[catKey] || CAT.autre;
+    const items  = groups[catKey];
+    const gVal   = items.reduce((s,a)=>s+getAssetValue(a), 0);
+    const gCost  = items.reduce((s,a)=>s+getAssetCost(a),  0);
+    const gPV    = gVal - gCost;
+    const gPVp   = gCost > 0 ? gPV/gCost*100 : 0;
+    const gShare = total > 0 ? gVal/total*100 : 0;
+    const openDefault = gi < 3; // first 3 groups open by default
+
+    const rows = items
+      .sort((a,b) => getAssetValue(b) - getAssetValue(a))
+      .map(a => {
+        const v = getAssetValue(a), c = getAssetCost(a), pv = v-c;
+        const pvPct  = c > 0 ? pv/c*100 : 0;
+        const share  = total > 0 ? v/total*100 : 0;
+        const hasCost = c > 0;
+        return `<tr class="data-row" onclick="editAsset('${a.id}')">
+          <td style="padding:6px 8px 6px 20px">
+            <div class="name-cell">
+              <div class="name-main" style="font-size:13px">${esc(a.name)}</div>
+              <div class="name-sub" style="font-size:10px">${getAssetSubLabel(a)}</div>
+            </div>
+          </td>
+          <td style="padding:6px 8px;text-align:right;color:var(--muted);font-size:11px">${fmt(c)||'—'}</td>
+          <td style="padding:6px 8px;text-align:right;font-weight:600;color:var(--gold2)">${fmt(v)}</td>
+          <td style="padding:6px 8px;text-align:right">
+            ${hasCost
+              ? `<span class="change-cell ${pv>=0?'up':'down'}" style="font-size:11px">
+                  ${pv>=0?'+':''}${fmt(pv)}<br>
+                  <span style="font-size:10px;opacity:.8">${pvPct>=0?'+':''}${pvPct.toFixed(1)}%</span>
+                 </span>`
+              : '<span style="color:var(--muted);font-size:11px">—</span>'
+            }
+          </td>
+          <td style="padding:6px 8px;min-width:70px">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:3px">${share.toFixed(1)}%</div>
+            <div class="progress-track" style="height:3px">
+              <div class="progress-fill" style="width:${share}%;background:${cat3.color}"></div>
+            </div>
+          </td>
+          <td style="padding:6px 8px">
+            <div style="display:flex;gap:5px;justify-content:flex-end" onclick="event.stopPropagation()">
+              <button class="action-btn" onclick="editAsset('${a.id}')">✎</button>
+              <button class="action-btn danger" onclick="deleteAsset('${a.id}')">✕</button>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+
+    const gid = 'gAcc_' + catKey;
+    const cid = 'gChv_' + catKey;
+
+    return `<div style="border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden">
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:center;
+                  padding:11px 14px;background:var(--surface2);cursor:pointer;user-select:none"
+           onclick="(function(){
+             var el=document.getElementById('${gid}'),ch=document.getElementById('${cid}');
+             if(!el)return;
+             var open=el.style.display!=='none';
+             el.style.display=open?'none':'block';
+             ch.textContent=open?'▶':'▼';
+           })()">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="cat-icon" style="background:${cat3.color}18;color:${cat3.color};width:28px;height:28px;font-size:13px">${cat3.icon}</div>
+          <div>
+            <div style="font-weight:600;font-size:13px">${cat3.label}</div>
+            <div style="font-size:10px;color:var(--muted)">${items.length} actif${items.length>1?'s':''} · ${gShare.toFixed(1)}% du patrimoine</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px">
+          <div style="text-align:right">
+            <div style="font-weight:700;color:var(--gold2);font-size:14px">${fmt(gVal)}</div>
+            <div style="font-size:11px" class="change-cell ${gPV>=0?'up':'down'}">
+              ${gPV>=0?'+':''}${fmt(gPV)} <span style="opacity:.7">(${gPVp>=0?'+':''}${gPVp.toFixed(1)}%)</span>
+            </div>
+          </div>
+          <span id="${cid}" style="color:var(--muted);font-size:12px;min-width:12px">${openDefault?'▼':'▶'}</span>
+        </div>
+      </div>
+      <!-- Body -->
+      <div id="${gid}" style="display:${openDefault?'block':'none'}">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border)">
+              <th style="padding:5px 8px 5px 20px;text-align:left;font-weight:400;color:var(--muted);font-size:10px">Actif</th>
+              <th style="padding:5px 8px;text-align:right;font-weight:400;color:var(--muted);font-size:10px">Coût</th>
+              <th style="padding:5px 8px;text-align:right;font-weight:400;color:var(--muted);font-size:10px">Valeur</th>
+              <th style="padding:5px 8px;text-align:right;font-weight:400;color:var(--muted);font-size:10px">+/-</th>
+              <th style="padding:5px 8px;font-weight:400;color:var(--muted);font-size:10px">Part</th>
+              <th style="padding:5px 8px;font-weight:400;color:var(--muted);font-size:10px"></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
   }).join('');
+}
+
+function toggleAllGlobalAccordions(open) {
+  const ids = Object.keys(CAT).concat(['autre']);
+  ids.forEach(k => {
+    const el = document.getElementById('gAcc_' + k);
+    const ch = document.getElementById('gChv_' + k);
+    if (el) { el.style.display = open ? 'block' : 'none'; }
+    if (ch) { ch.textContent  = open ? '▼' : '▶'; }
+  });
 }
 
 function getAssetSubLabel(a) {
