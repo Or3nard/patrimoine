@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2026-03-17-2215 -->
+<!-- v2026-03-17-2230 -->
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -1945,9 +1945,11 @@ function switchSubPage(sp, btn) {
 let evoC, donutC, expDonutC, incDonutC, annualBarC;
 
 function mkDonut(id, cut='70%') {
-  var existing = Chart.getChart(document.getElementById(id));
+  var el = document.getElementById(id);
+  if (!el) return null;
+  var existing = Chart.getChart(el);
   if (existing) existing.destroy();
-  return new Chart(document.getElementById(id).getContext('2d'), {
+  return new Chart(el.getContext('2d'), {
     type:'doughnut', data:{labels:[],datasets:[{data:[],backgroundColor:[],borderWidth:0,hoverBorderWidth:2,hoverBorderColor:'#c9a84c'}]},
     options:{responsive:true,maintainAspectRatio:false,cutout:cut,plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a1d22',borderColor:'#252830',borderWidth:1,titleColor:'#6b6e78',bodyColor:'#e8e6e0',callbacks:{label:function(c){return '  '+c.label+': '+fmt(c.raw);}}}}}
   });
@@ -1960,24 +1962,29 @@ function _destroyChart(id) {
 }
 function initCharts() {
   if(typeof Chart==='undefined'){console.error('Chart.js non chargé');return;}
-  _destroyChart('evoChart'); _destroyChart('donutChart');
-  _destroyChart('expDonut'); _destroyChart('incDonut'); _destroyChart('annualBar');
+  ['evoChart','donutChart','expDonut','incDonut','annualBar'].forEach(_destroyChart);
   if(evoC){try{evoC.destroy();}catch(e){}} evoC=null;
   if(donutC){try{donutC.destroy();}catch(e){}} donutC=null;
   if(expDonutC){try{expDonutC.destroy();}catch(e){}} expDonutC=null;
   if(incDonutC){try{incDonutC.destroy();}catch(e){}} incDonutC=null;
   if(annualBarC){try{annualBarC.destroy();}catch(e){}} annualBarC=null;
-  evoC = new Chart(document.getElementById('evoChart').getContext('2d'), {
-    type:'line', data:{labels:[],datasets:[{data:[],borderColor:'#c9a84c',backgroundColor:'rgba(201,168,76,0.06)',borderWidth:1.5,fill:true,tension:0.4,pointRadius:0,pointHoverRadius:4}]},
-    options:{responsive:true,maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a1d22',borderColor:'#252830',borderWidth:1,titleColor:'#6b6e78',bodyColor:'#e8e6e0',callbacks:{label:function(c){return '  '+fmt(c.raw);}}}},scales:{x:{grid:{color:'rgba(255,255,255,0.03)'},ticks:{color:'#6b6e78',font:{family:'DM Mono',size:10},maxTicksLimit:8}},y:{grid:{color:'rgba(255,255,255,0.03)'},ticks:{color:'#6b6e78',font:{family:'DM Mono',size:10},callback:function(v){return fmtS(v);}}}}}
-  });
+  var evoEl = document.getElementById('evoChart');
+  if(evoEl) {
+    evoC = new Chart(evoEl.getContext('2d'), {
+      type:'line', data:{labels:[],datasets:[{data:[],borderColor:'#c9a84c',backgroundColor:'rgba(201,168,76,0.06)',borderWidth:1.5,fill:true,tension:0.4,pointRadius:0,pointHoverRadius:4}]},
+      options:{responsive:true,maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a1d22',borderColor:'#252830',borderWidth:1,titleColor:'#6b6e78',bodyColor:'#e8e6e0',callbacks:{label:function(c){return '  '+fmt(c.raw);}}}},scales:{x:{grid:{color:'rgba(255,255,255,0.03)'},ticks:{color:'#6b6e78',font:{family:'DM Mono',size:10},maxTicksLimit:8}},y:{grid:{color:'rgba(255,255,255,0.03)'},ticks:{color:'#6b6e78',font:{family:'DM Mono',size:10},callback:function(v){return fmtS(v);}}}}}
+    });
+  }
   donutC    = mkDonut('donutChart');
   expDonutC = mkDonut('expDonut','66%');
   incDonutC = mkDonut('incDonut','66%');
-  annualBarC = new Chart(document.getElementById('annualBar').getContext('2d'), {
-    type:'bar', data:{labels:[],datasets:[{label:'Revenus',data:[],backgroundColor:'rgba(76,175,130,0.65)',borderRadius:4},{label:'Dépenses',data:[],backgroundColor:'rgba(224,92,92,0.65)',borderRadius:4}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#6b6e78',font:{family:'DM Mono',size:10}}},tooltip:{backgroundColor:'#1a1d22',borderColor:'#252830',borderWidth:1,bodyColor:'#e8e6e0',titleColor:'#6b6e78',callbacks:{label:function(c){return ' '+c.dataset.label+': '+fmt(c.raw);}}}},scales:{x:{grid:{display:false},ticks:{color:'#6b6e78',font:{family:'DM Mono',size:10}}},y:{grid:{color:'rgba(255,255,255,0.03)'},ticks:{color:'#6b6e78',font:{family:'DM Mono',size:10},callback:function(v){return fmtS(v);}}}}}
-  });
+  var barEl = document.getElementById('annualBar');
+  if(barEl) {
+    annualBarC = new Chart(barEl.getContext('2d'), {
+      type:'bar', data:{labels:[],datasets:[{label:'Revenus',data:[],backgroundColor:'rgba(76,175,130,0.65)',borderRadius:4},{label:'Dépenses',data:[],backgroundColor:'rgba(224,92,92,0.65)',borderRadius:4}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#6b6e78',font:{family:'DM Mono',size:10}}},tooltip:{backgroundColor:'#1a1d22',borderColor:'#252830',borderWidth:1,bodyColor:'#e8e6e0',titleColor:'#6b6e78',callbacks:{label:function(c){return ' '+c.dataset.label+': '+fmt(c.raw);}}}},scales:{x:{grid:{display:false},ticks:{color:'#6b6e78',font:{family:'DM Mono',size:10}}},y:{grid:{color:'rgba(255,255,255,0.03)'},ticks:{color:'#6b6e78',font:{family:'DM Mono',size:10},callback:function(v){return fmtS(v);}}}}}
+    });
+  }
 }
 
 // ══════════════════════════════════════════════════
