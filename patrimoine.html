@@ -4156,14 +4156,25 @@ function shiftMonth(dir){
   renderDep();
 }
 function openTransModal(type){
-  editTransId=null; transType=type||'income';
-  const titleEl=document.getElementById('transModalTitle');
-  if(titleEl) titleEl.textContent='Nouvelle transaction';
-  ['transDesc','transAmount','transNote'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  const dt=document.getElementById('transDate'); if(dt) dt.value=new Date().toISOString().slice(0,10);
-  _buildTransCats(type);
+  editTransId = null;
+  transType   = type || 'income';
+  const titleEl = document.getElementById('transModalTitle');
+  if(titleEl) titleEl.textContent = 'Nouvelle transaction';
+  ['transDesc','transAmount','transNote'].forEach(id => {
+    const el = document.getElementById(id); if(el) el.value = '';
+  });
+  const dt = document.getElementById('transDate');
+  if(dt) dt.value = new Date().toISOString().slice(0,10);
+
+  // Always pre-build cats for income/expense (needed on first open)
+  _buildTransCats(type === 'transfer' ? 'expense' : type);
+
+  // Then update button states + show/hide sections
   setTransType(type);
-  setTransCompte(depCompte==='global'?'perso':depCompte);
+
+  // Default account selection
+  setTransCompte(depCompte === 'global' ? 'perso' : depCompte);
+
   document.getElementById('transModal').classList.add('open');
 }
 function closeTransModal(){document.getElementById('transModal').classList.remove('open');editTransId=null;}
@@ -4181,27 +4192,36 @@ function setTransCompte(c) {
 }
 
 function setTransType(type){
-  transType=type;
-  const bI=document.getElementById('btnIncome');
-  const bE=document.getElementById('btnExpense');
-  const bT=document.getElementById('btnTransfer');
-  if(bI) bI.className='btn '+(type==='income' ?'btn-green':'btn-ghost');
-  if(bE) bE.className='btn '+(type==='expense'?'btn-red'  :'btn-ghost');
-  if(bT) bT.className='btn '+(type==='transfer'?'btn-blue' :'btn-ghost');
+  transType = type;
+  const bI = document.getElementById('btnIncome');
+  const bE = document.getElementById('btnExpense');
+  const bT = document.getElementById('btnTransfer');
+  if(bI) bI.className = 'btn ' + (type==='income'   ? 'btn-green' : 'btn-ghost');
+  if(bE) bE.className = 'btn ' + (type==='expense'  ? 'btn-red'   : 'btn-ghost');
+  if(bT) bT.className = 'btn ' + (type==='transfer' ? 'btn-blue'  : 'btn-ghost');
 
-  const isTransfer = type==='transfer';
-  const catGroup    = document.getElementById('transCatGroup');
+  const isTransfer = (type === 'transfer');
+
+  // Show/hide category selector
+  const catGroup = document.getElementById('transCatGroup');
+  if(catGroup) catGroup.style.display = isTransfer ? 'none' : 'block';
+
+  // Show/hide perso/commun selector
   const compteGroup = document.getElementById('transCompteGroup');
-  const tGroup      = document.getElementById('transferCompteGroup');
-  const info        = document.getElementById('transferInfo');
-  if(catGroup)    catGroup.style.display    = isTransfer ? 'none' : '';
-  if(compteGroup) compteGroup.style.display = isTransfer ? 'none' : '';
-  if(tGroup)      tGroup.style.display      = isTransfer ? '' : 'none';
-  if(info)        info.style.display        = isTransfer ? '' : 'none';
+  if(compteGroup) compteGroup.style.display = isTransfer ? 'none' : 'block';
 
+  // Show/hide transfer from→to selector
+  const tGroup = document.getElementById('transferCompteGroup');
+  if(tGroup) tGroup.style.display = isTransfer ? 'block' : 'none';
+
+  // Show/hide info banner
+  const info = document.getElementById('transferInfo');
+  if(info) info.style.display = isTransfer ? 'block' : 'none';
+
+  // Rebuild category options for income/expense
   if(!isTransfer) _buildTransCats(type);
 
-  // Disable category for transfer in save
+  // Update save button label
   const saveBtn = document.getElementById('transSaveBtn');
   if(saveBtn) saveBtn.textContent = isTransfer ? '↔ Créer le virement' : 'Enregistrer';
 }
