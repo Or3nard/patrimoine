@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2026-03-07-1025 -->
+<!-- v2026-03-17-2045 -->
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -979,15 +979,43 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
 <!-- GOAL MODAL -->
 <div class="modal-overlay" id="goalModal">
 <div class="modal sm">
-  <div class="modal-title">Nouvel objectif</div>
-  <div class="form-group"><label class="form-label">Nom</label><input class="form-input" id="goalName" placeholder="ex: Retraite, RP..."></div>
+  <div class="modal-title" id="goalModalTitle">Nouvel objectif</div>
+  <div class="form-group"><label class="form-label">Nom de l'objectif</label><input class="form-input" id="goalName" placeholder="ex: Retraite, Résidence principale, Fonds urgence…"></div>
   <div class="form-row">
-    <div class="form-group"><label class="form-label">Montant cible (€)</label><input class="form-input" id="goalTarget" type="number" placeholder="0"></div>
-    <div class="form-group"><label class="form-label">Échéance</label><input class="form-input" id="goalDeadline" type="date"></div>
+    <div class="form-group"><label class="form-label">Type</label>
+      <select class="form-select" id="goalType" onchange="onGoalTypeChange()">
+        <option value="total">🌐 Patrimoine total</option>
+        <option value="actions">📈 Actions / ETF</option>
+        <option value="livrets">🏦 Livrets / Épargne</option>
+        <option value="immobilier">🏠 Immobilier</option>
+        <option value="assurance-vie">🛡️ Assurance-vie</option>
+        <option value="per">🌅 PER</option>
+        <option value="crypto">₿ Crypto</option>
+        <option value="scpi">🏢 SCPI</option>
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">Couleur</label>
+      <select class="form-select" id="goalColor">
+        <option value="var(--gold2)">✦ Or</option>
+        <option value="var(--blue)">◆ Bleu</option>
+        <option value="var(--green)">◆ Vert</option>
+        <option value="var(--purple)">◆ Violet</option>
+        <option value="var(--teal)">◆ Teal</option>
+        <option value="var(--red)">◆ Rouge</option>
+      </select>
+    </div>
   </div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Montant cible (€)</label><input class="form-input" id="goalTarget" type="number" placeholder="0" oninput="calcGoalPreview()"></div>
+    <div class="form-group"><label class="form-label">Échéance</label><input class="form-input" id="goalDeadline" type="date" oninput="calcGoalPreview()"></div>
+  </div>
+  <div class="form-group"><label class="form-label">Épargne mensuelle dédiée (€) <span style="font-size:10px;color:var(--muted)">(optionnel)</span></label>
+    <input class="form-input" id="goalMonthlySav" type="number" placeholder="ex: 300" oninput="calcGoalPreview()">
+  </div>
+  <div id="goalPreview" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:11px;color:var(--muted);margin-top:2px;line-height:1.8"></div>
   <div class="modal-footer">
     <button class="btn btn-ghost" onclick="closeGoalModal()">Annuler</button>
-    <button class="btn btn-gold" onclick="saveGoal()">Enregistrer</button>
+    <button class="btn btn-gold" onclick="saveGoal()" id="goalSaveBtn">Enregistrer</button>
   </div>
 </div>
 </div>
@@ -2003,7 +2031,10 @@ function renderGlobal() {
     <div class="panel" style="margin-bottom:18px">
       <div class="panel-header">
         <span class="panel-title">Objectifs patrimoniaux</span>
-        <button class="btn btn-ghost" style="padding:4px 10px;font-size:10px" onclick="openGoalModal()">+ Objectif</button>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${goals.length ? `<span class="panel-badge">${goals.filter(g=>{ const cv=g.cat&&g.cat!=='total'?assets.filter(a=>a.cat===g.cat).reduce((s,a)=>s+getAssetValue(a),0):total; return cv>=parseFloat(g.target||0); }).length}/${goals.length} atteint${goals.filter(g=>{ const cv=g.cat&&g.cat!=='total'?assets.filter(a=>a.cat===g.cat).reduce((s,a)=>s+getAssetValue(a),0):total; return cv>=parseFloat(g.target||0); }).length>1?'s':''}</span>` : ''}
+          <button class="btn btn-ghost" style="padding:4px 10px;font-size:10px" onclick="openGoalModal()">+ Objectif</button>
+        </div>
       </div>
       <div class="panel-body" id="goalsContainer">
         ${renderRentierGoal(assets, total, cost)}
@@ -2255,7 +2286,13 @@ function _scorePatrimoine(assets, total, cost, goals, credits) {
 
   // Objectifs: nb atteints / total
   const goalsArr  = (goals||[]);
-  const gAtt = goalsArr.filter(g => total >= parseFloat(g.amount||0)).length;
+  const gAtt = goalsArr.filter(g => {
+    if (g.cat && g.cat !== 'total') {
+      const catVal = assets.filter(a=>a.cat===g.cat).reduce((s,a)=>s+getAssetValue(a),0);
+      return catVal >= parseFloat(g.target||0);
+    }
+    return total >= parseFloat(g.target||0);
+  }).length;
   const goalScore = goalsArr.length ? Math.min(100, gAtt / goalsArr.length * 100) : 50;
 
   // Weighted total
@@ -2432,8 +2469,7 @@ function renderAllocCibles(assets, total) {
 
 function renderProjection(assets, total, cost) {
   if (!total) return '';
-  const pvPct = cost > 0 ? (total-cost)/cost*100 : 0;
-  // Estimate annualized return based on current portfolio mix
+  // Estimate weighted return from portfolio mix
   const cats = {};
   assets.forEach(a => { cats[a.cat] = (cats[a.cat]||0) + getAssetValue(a); });
   const expectedReturns = {
@@ -2446,43 +2482,67 @@ function renderProjection(assets, total, cost) {
   });
   weightedReturn = Math.max(0.01, Math.min(0.15, weightedReturn));
 
-  // Monthly contribution (estimate from recent transactions or 0)
-  const monthlySavings = 500; // default estimate
+  const monthlySavings = parseFloat(localStorage.getItem('pat3_proj_savings') || '500');
 
-  // Projection points: 1, 3, 5, 10, 20 years
   const years = [1,2,3,5,10,15,20];
-  const projData = years.map(y => {
-    // FV with monthly contributions: FV = PV*(1+r)^n + PMT*((1+r)^n - 1)/r
-    const n = y * 12;
-    const r = weightedReturn / 12;
-    const fv = total * Math.pow(1+r, n) + monthlySavings * (Math.pow(1+r,n)-1)/r;
-    return { y, v: Math.round(fv) };
-  });
+  function project(r, pmt) {
+    return years.map(y => {
+      const n = y * 12, mr = r / 12;
+      return { y, v: Math.round(total * Math.pow(1+mr, n) + pmt * (Math.pow(1+mr,n)-1)/mr) };
+    });
+  }
+  const scenarios = {
+    pess: project(Math.max(0.01, weightedReturn - 0.03), monthlySavings * 0.6),
+    base: project(weightedReturn, monthlySavings),
+    opti: project(Math.min(0.15, weightedReturn + 0.03), monthlySavings * 1.5),
+  };
 
   const fmtM = v => v >= 1000000 ? (v/1000000).toFixed(2)+'M€' : v >= 1000 ? Math.round(v/1000)+'k€' : fmt(v);
 
-  const cards = projData.filter(p => [1,5,10,20].includes(p.y)).map(p => `
-    <div style="text-align:center;padding:12px 8px;background:var(--surface2);border-radius:8px;flex:1">
+  const cards = scenarios.base.filter(p => [1,5,10,20].includes(p.y)).map((p,ki) => {
+    const pp = scenarios.pess.find(x=>x.y===p.y), po = scenarios.opti.find(x=>x.y===p.y);
+    return `<div style="text-align:center;padding:12px 8px;background:var(--surface2);border-radius:8px;flex:1">
       <div style="font-size:10px;color:var(--muted);margin-bottom:4px">${p.y} an${p.y>1?'s':''}</div>
       <div style="font-size:18px;font-weight:700;color:var(--gold2)">${fmtM(p.v)}</div>
       <div style="font-size:10px;color:var(--green)">+${Math.round((p.v-total)/total*100)}%</div>
-    </div>`).join('');
+      <div style="font-size:9px;color:var(--muted);margin-top:4px;line-height:1.6">
+        🔴 ${fmtM(pp.v)}<br>🟢 ${fmtM(po.v)}
+      </div>
+    </div>`;
+  }).join('');
 
-  const canvasData = JSON.stringify(projData.map(p=>({y:p.y, v:p.v})));
+  const canvasData = JSON.stringify({
+    pess: scenarios.pess.map(p=>({y:p.y, v:p.v})),
+    base: scenarios.base.map(p=>({y:p.y, v:p.v})),
+    opti: scenarios.opti.map(p=>({y:p.y, v:p.v})),
+    labels: years.map(y=>y+'a')
+  });
 
   return `<div class="panel" style="margin-bottom:18px">
     <div class="panel-header">
       <span class="panel-title">Projection patrimoniale</span>
-      <span style="font-size:10px;color:var(--muted)">
-        Rendement estimé ${(weightedReturn*100).toFixed(1)}%/an · +500€/mois · Non garanti
-      </span>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:10px;color:var(--muted)">Rdt estimé ${(weightedReturn*100).toFixed(1)}%/an</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:10px;color:var(--muted)">Épargne/mois :</span>
+          <input type="number" value="${monthlySavings}" min="0" step="50" style="width:80px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px;outline:none"
+            oninput="localStorage.setItem('pat3_proj_savings',this.value);renderSubPage(currentSubPage)" title="Épargne mensuelle nette">
+          <span style="font-size:10px;color:var(--muted)">€</span>
+        </div>
+      </div>
     </div>
     <div class="panel-body">
+      <!-- Scenario legend -->
+      <div style="display:flex;gap:16px;font-size:10px;color:var(--muted);margin-bottom:12px;flex-wrap:wrap">
+        <div><span style="color:var(--red)">●</span> Pessimiste (−3%, ×0,6 épargne)</div>
+        <div><span style="color:var(--gold2)">●</span> Base (${(weightedReturn*100).toFixed(1)}%, ${fmt(monthlySavings)}/m)</div>
+        <div><span style="color:var(--green)">●</span> Optimiste (+3%, ×1,5 épargne)</div>
+      </div>
       <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">${cards}</div>
-      <div style="height:120px"><canvas id="projChart"></canvas></div>
+      <div style="height:150px"><canvas id="projChart"></canvas></div>
     </div>
   </div>
-  <script>window._projData=${canvasData};<\/script>`;
+  <script>window._projScenarios=${canvasData};<\/script>`;
 }
 
 function renderAlertes() { return ''; } // Merged into renderPatrimoineScore
@@ -2525,29 +2585,46 @@ function _initScoreGauge() {
 function _initProjectionChart() {
   const canvas = document.getElementById('projChart');
   if (!canvas || typeof Chart === 'undefined') return;
-  if (!window._projData) return;
-  const data = window._projData;
+  const sc = window._projScenarios;
+  if (!sc) return;
   try {
     new Chart(canvas, {
       type: 'line',
       data: {
-        labels: data.map(p => p.y + 'a'),
-        datasets: [{
-          data: data.map(p => p.v),
-          borderColor: 'var(--gold2)',
-          backgroundColor: 'rgba(201,168,76,.12)',
-          fill: true,
-          tension: 0.4,
-          pointRadius: 3,
-          pointBackgroundColor: 'var(--gold2)',
-          borderWidth: 2,
-        }]
+        labels: sc.labels,
+        datasets: [
+          {
+            label: 'Pessimiste',
+            data: sc.pess.map(p=>p.v),
+            borderColor: 'rgba(224,92,92,.7)',
+            backgroundColor: 'transparent',
+            fill: false, tension: 0.4, pointRadius: 2, borderWidth: 1.5, borderDash: [4,3],
+          },
+          {
+            label: 'Base',
+            data: sc.base.map(p=>p.v),
+            borderColor: 'var(--gold2)',
+            backgroundColor: 'rgba(201,168,76,.08)',
+            fill: true, tension: 0.4, pointRadius: 3,
+            pointBackgroundColor: 'var(--gold2)', borderWidth: 2,
+          },
+          {
+            label: 'Optimiste',
+            data: sc.opti.map(p=>p.v),
+            borderColor: 'rgba(76,175,130,.7)',
+            backgroundColor: 'transparent',
+            fill: false, tension: 0.4, pointRadius: 2, borderWidth: 1.5, borderDash: [4,3],
+          }
+        ]
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend:{display:false}, tooltip:{
-          callbacks:{label: ctx => ' ' + Math.round(ctx.raw/1000) + 'k €'}
-        }},
+        plugins: {
+          legend: { display: false },
+          tooltip: { backgroundColor:'#1a1d22', borderColor:'#252830', borderWidth:1, bodyColor:'#e8e6e0', titleColor:'#6b6e78',
+            callbacks: { label: ctx => ' ' + ctx.dataset.label + ': ' + (ctx.raw>=1000000?(ctx.raw/1000000).toFixed(2)+'M€':Math.round(ctx.raw/1000)+'k €') }
+          }
+        },
         scales: {
           x: { grid:{color:'rgba(255,255,255,.05)'}, ticks:{color:'var(--muted)',font:{size:10}} },
           y: { grid:{color:'rgba(255,255,255,.05)'}, ticks:{
@@ -2572,13 +2649,20 @@ function setChartP(m, btn) {
 function updateEvoChart(months) {
   if(!evoC) return;
   const total=getTotalVal(), labels=[], data=[], n=new Date();
+  const snaps = aHistory.filter(h=>h.type==='snap');
   for(let i=months;i>=0;i--) {
     const d=new Date(n); d.setMonth(d.getMonth()-i);
     labels.push(d.toLocaleDateString('fr-FR',{month:'short',year:i>0?undefined:'2-digit'}));
-    const snap=aHistory.find(h=>h.type==='snap'&&h.month===d.toISOString().slice(0,7));
-    data.push(snap?snap.val:i===0?total:Math.round(total*(1-(i/months)*0.07-Math.random()*0.01)));
+    const key = d.toISOString().slice(0,7);
+    const snap = snaps.find(h=>h.month===key);
+    if (snap) { data.push(snap.val); }
+    else if (i === 0) { data.push(total); }
+    else { data.push(null); } // Use null for missing data points — no fake interpolation
   }
-  evoC.data.labels=labels; evoC.data.datasets[0].data=data; evoC.update();
+  evoC.data.labels=labels;
+  evoC.data.datasets[0].data=data;
+  evoC.data.datasets[0].spanGaps=true; // connect across null gaps
+  evoC.update();
 }
 
 function updateDonutChart() {
@@ -2746,11 +2830,71 @@ function getAssetSubLabel(a) {
 
 function renderGoalsHTML() {
   const total=getTotalVal();
-  if(!goals.length) return '<div class="empty-state" style="padding:24px 0"><div>Aucun objectif défini</div></div>';
+  if(!goals.length) return `<div class="empty-state" style="padding:24px 0"><div class="big">🎯</div><div>Aucun objectif défini</div><button class="btn btn-gold" onclick="openGoalModal()" style="margin-top:12px">+ Ajouter un objectif</button></div>`;
   return goals.map((g,i)=>{
-    const pct=g.target>0?Math.min(total/g.target*100,100):0, color=pct>=100?'var(--green)':pct>50?'var(--gold)':'var(--blue)';
-    const dl=g.deadline?Math.ceil((new Date(g.deadline)-Date.now())/86400000):null;
-    return `<div style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px"><span style="font-size:12px">${esc(g.name)}</span><button class="action-btn danger" onclick="deleteGoal(${i})" style="padding:2px 7px">✕</button></div><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:4px"><span>${fmt(total)} / ${fmt(g.target)}</span><span style="color:${color}">${pct.toFixed(1)}%${dl!==null?` — ${dl>0?dl+'j':'Échu'}`:''}</span></div><div class="progress-track" style="height:4px"><div class="progress-fill" style="width:${pct}%;background:${color}"></div></div></div>`;
+    const type = g.cat || 'total';
+    const catLabel = type==='total' ? 'Patrimoine total' : (CAT[type]||CAT.autre).label;
+    const catIcon  = type==='total' ? '🌐' : (CAT[type]||CAT.autre).icon;
+    const currentVal = type==='total' ? total : assets.filter(a=>a.cat===type).reduce((s,a)=>s+getAssetValue(a),0);
+    const target = parseFloat(g.target)||0;
+    const pct = target>0 ? Math.min(100, currentVal/target*100) : 0;
+    const remaining = Math.max(0, target - currentVal);
+    const color = g.color || 'var(--gold2)';
+    const dl = g.deadline ? Math.ceil((new Date(g.deadline)-Date.now())/86400000) : null;
+
+    // ETA calculation
+    let etaStr = '';
+    if (remaining > 0 && g.monthlySav > 0) {
+      const r = 0.05/12;
+      let v = currentVal, m = 0;
+      while(v < target && m < 600){ v=v*(1+r)+g.monthlySav; m++; }
+      if(m<600){ const y=Math.floor(m/12),mo=m%12; etaStr=(y>0?y+'a ':'')+(mo>0?mo+'m':''); }
+      else etaStr='>50a';
+    }
+
+    // SVG ring
+    const R=32, C=2*Math.PI*R;
+    const dash = (pct/100)*C;
+    const ring = `<svg width="80" height="80" viewBox="0 0 80 80" style="transform:rotate(-90deg)">
+      <circle cx="40" cy="40" r="${R}" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="7"/>
+      <circle cx="40" cy="40" r="${R}" fill="none" stroke="${color}" stroke-width="7"
+        stroke-dasharray="${dash.toFixed(1)} ${(C-dash).toFixed(1)}" stroke-linecap="round"
+        style="transition:stroke-dasharray .6s ease"/>
+    </svg>`;
+
+    return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px">
+      <div style="display:flex;gap:14px;align-items:center">
+        <!-- Ring -->
+        <div style="position:relative;flex:0 0 80px;height:80px">
+          ${ring}
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
+            <div style="font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:500;color:${color};line-height:1">${pct.toFixed(0)}%</div>
+            <div style="font-size:9px;color:var(--muted)">${pct>=100?'✅ ATTEINT':'EN COURS'}</div>
+          </div>
+        </div>
+        <!-- Info -->
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(g.name)}</div>
+              <div style="font-size:10px;color:var(--muted)">${catIcon} ${catLabel}</div>
+            </div>
+            <div style="display:flex;gap:5px">
+              <button class="action-btn" onclick="openGoalModal(${i})" title="Modifier">✎</button>
+              <button class="action-btn danger" onclick="deleteGoal(${i})" title="Supprimer">✕</button>
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px 14px;font-size:11px">
+            <div><span style="color:var(--muted)">Actuel</span> <b style="color:${color}">${fmt(currentVal)}</b></div>
+            <div><span style="color:var(--muted)">Cible</span> <b>${fmt(target)}</b></div>
+            ${remaining>0?`<div><span style="color:var(--muted)">Manque</span> <b style="color:var(--red)">${fmt(remaining)}</b></div>`:''}
+            ${dl!==null?`<div><span style="color:var(--muted)">Échéance</span> <b style="color:${dl<0?'var(--red)':dl<90?'var(--gold)':'var(--muted)'}">${dl>0?dl+'j':dl===0?'Aujourd\'hui':'Échu'}</b></div>`:''}
+            ${etaStr?`<div><span style="color:var(--muted)">ETA (${fmt(g.monthlySav)}/m)</span> <b style="color:var(--gold2)">${etaStr}</b></div>`:''}
+            ${g.monthlySav&&remaining>0&&!etaStr?`<div><span style="color:var(--muted)">Épargne dédiée</span> <b>${fmt(g.monthlySav)}/m</b></div>`:''}
+          </div>
+        </div>
+      </div>
+    </div>`;
   }).join('');
 }
 
@@ -2808,8 +2952,13 @@ function renderCatKPIs(cat, list, total) {
   }
   if(cat==='crypto'||cat==='actions') {
     const lastUpdated = list.map(a=>a.priceUpdatedAt).filter(Boolean).sort().pop();
-    const freshness = lastUpdated?`Cours mis à jour ${timeSince(lastUpdated)}`:'Cours non actualisés';
-    return `<div class="kpi-grid4"><div class="kpi"><div class="kpi-label">Valeur totale</div><div class="kpi-value sm" style="color:${cat3.color}">${fmt(totalVal)}</div><div class="kpi-sub">${share.toFixed(1)}% du patrimoine</div></div><div class="kpi"><div class="kpi-label">Investissement</div><div class="kpi-value sm">${fmt(totalCost)}</div><div class="kpi-sub">prix de revient total</div></div><div class="kpi"><div class="kpi-label">Plus-value latente</div><div class="kpi-value sm" style="color:${pv>=0?'var(--green)':'var(--red)'}">${pv>=0?'+':''}${fmt(pv)}</div><div class="kpi-sub ${pvPct>=0?'up':'down'}">${pvPct>=0?'+':''}${pvPct.toFixed(1)}%</div></div><div class="kpi"><div class="kpi-label">Données de cours</div><div class="kpi-value xs" style="color:var(--muted);font-size:13px">${freshness}</div><div class="kpi-sub" id="priceStatusSub">Cliquez ↻ pour actualiser</div></div></div>`;
+    const ageMs = lastUpdated ? Date.now() - new Date(lastUpdated).getTime() : Infinity;
+    const ageMin = ageMs / 60000;
+    const freshnessColor = ageMin < 60 ? 'var(--green)' : ageMin < 1440 ? '#f59e0b' : 'var(--red)';
+    const freshnessLabel = !lastUpdated ? 'Jamais actualisé' : ageMin < 1 ? 'À l\'instant' : ageMin < 60 ? `Il y a ${Math.round(ageMin)} min` : ageMin < 1440 ? `Il y a ${Math.floor(ageMin/60)}h${Math.round(ageMin%60)?Math.round(ageMin%60)+'m':''}` : `Il y a ${Math.floor(ageMin/1440)}j`;
+    const noPrice = list.filter(a=>!parseFloat(a.stockPrice||a.cryptoPrice||0));
+    const freshnessHint = noPrice.length > 0 ? `${noPrice.length} sans cours` : 'Tous actualisés';
+    return `<div class="kpi-grid4"><div class="kpi"><div class="kpi-label">Valeur totale</div><div class="kpi-value sm" style="color:${cat3.color}">${fmt(totalVal)}</div><div class="kpi-sub">${share.toFixed(1)}% du patrimoine</div></div><div class="kpi"><div class="kpi-label">Investissement</div><div class="kpi-value sm">${fmt(totalCost)}</div><div class="kpi-sub">prix de revient total</div></div><div class="kpi"><div class="kpi-label">Plus-value latente</div><div class="kpi-value sm" style="color:${pv>=0?'var(--green)':'var(--red)'}">${pv>=0?'+':''}${fmt(pv)}</div><div class="kpi-sub ${pvPct>=0?'up':'down'}">${pvPct>=0?'+':''}${pvPct.toFixed(1)}%</div></div><div class="kpi"><div class="kpi-label">Fraîcheur des cours</div><div style="display:flex;align-items:center;gap:7px;margin:5px 0"><div style="width:9px;height:9px;border-radius:50%;background:${freshnessColor};box-shadow:0 0 6px ${freshnessColor};flex-shrink:0;${ageMin<60?'animation:pulse 2s infinite':''}"></div><div style="font-family:'Cormorant Garamond',serif;font-size:18px;color:${freshnessColor}">${freshnessLabel}</div></div><div class="kpi-sub" style="color:${noPrice.length>0?'var(--red)':'var(--muted)'}">${freshnessHint}</div></div></div>`;
   }
   if(cat==='scpi') {
     const totalParts = list.reduce((s,a)=>s+parseFloat(a.scpiParts||0),0);
@@ -2883,17 +3032,21 @@ function renderCatTable(cat, list, total) {
     var groupKeys = Object.keys(groups);
     // If only one group with key 'individual' → flat table (legacy)
     if (groupKeys.length === 1 && groupKeys[0] === 'individual') {
-      return `<table class="data-table"><thead><tr><th style="padding-left:18px">Valeur</th><th>Compte</th><th>Qté</th><th>PRU</th><th>Cours actuel</th><th>Valeur totale</th><th>+/- value</th><th>Mise à jour</th><th>Actions</th></tr></thead><tbody>${list.map(a=>{
+      return `<table class="data-table"><thead><tr><th style="padding-left:18px">Valeur</th><th>Compte</th><th>Qté</th><th>PRU</th><th>Cours actuel</th><th>Valeur totale</th><th>+/- value</th><th>Fraîcheur</th><th>Actions</th></tr></thead><tbody>${list.map(a=>{
       const qty=parseFloat(a.stockQty||0), pru=parseFloat(a.stockPRU||0), price=parseFloat(a.stockPrice||pru);
       const val=qty*price, cost=qty*pru, pv=val-cost, pvPct=cost>0?(pv/cost*100):0;
+      const ageMs=a.priceUpdatedAt?Date.now()-new Date(a.priceUpdatedAt).getTime():Infinity;
+      const ageMin=ageMs/60000;
+      const fCol=ageMin<60?'var(--green)':ageMin<1440?'#f59e0b':'var(--red)';
+      const fLabel=!a.priceUpdatedAt?'—':ageMin<1?'<1min':ageMin<60?Math.round(ageMin)+'min':ageMin<1440?Math.floor(ageMin/60)+'h':Math.floor(ageMin/1440)+'j';
       return `<tr class="data-row" onclick="editAsset('${a.id}')"><td style="padding-left:18px"><div class="name-cell"><div class="cat-icon" style="background:${cat3.color}18;color:${cat3.color}">${cat3.icon}</div><div><div class="name-main">${esc(a.name)}</div><div class="name-sub">${a.stockTicker||''} · ${a.stockExchange||''}</div></div></div></td>
       <td><span class="pill ${a.stockAccount||'cto'}">${(a.stockAccount||'cto').toUpperCase()}</span></td>
       <td>${qty.toLocaleString('fr-FR',{maximumFractionDigits:3})}</td><td>${fmt2(pru)}</td>
       <td><div style="font-weight:500">${fmt2(price)}</div></td>
       <td style="font-weight:600;color:var(--gold2)">${fmt(val)}</td>
       <td><span class="change-cell ${pv>=0?'up':'down'}">${pv>=0?'+':''}${fmt(pv)}<br><span style="font-size:10px">${pvPct>=0?'+':''}${pvPct.toFixed(1)}%</span></span></td>
-      <td style="color:var(--muted);font-size:10px">${a.priceUpdatedAt ? (function(){var d=new Date(a.priceUpdatedAt),t=new Date();return d.toDateString()===t.toDateString()?d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'});})() : '—'}</td>
-      <td><div style="display:flex;gap:5px" onclick="event.stopPropagation()"><button class="action-btn" onclick="refreshSinglePrice('${a.id}')">↻</button><button class="action-btn" onclick="editAsset('${a.id}')">✎</button><button class="action-btn danger" onclick="deleteAsset('${a.id}')">✕</button></div></td></tr>`;
+      <td><div style="display:flex;align-items:center;gap:5px"><div style="width:7px;height:7px;border-radius:50%;background:${fCol};flex-shrink:0"></div><span style="font-size:10px;color:${fCol}">${fLabel}</span></div></td>
+      <td><div style="display:flex;gap:5px" onclick="event.stopPropagation()"><button class="action-btn" onclick="refreshSinglePrice('${a.id}')" title="Actualiser ce cours">↻</button><button class="action-btn" onclick="editAsset('${a.id}')">✎</button><button class="action-btn danger" onclick="deleteAsset('${a.id}')">✕</button></div></td></tr>`;
     }).join('')}</tbody></table>`;
     }
     // Multi-group accordion view
@@ -3339,20 +3492,49 @@ function deleteCredit(id) {
 
 // ── Actualisation des prix ────────────────────────────
 async function refreshAllPrices() {
-  toast('↻ Actualisation de tous les cours…');
+  const btn = document.getElementById('refreshAllBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '↻ Actualisation…'; }
+
+  // Crypto first (1 batch call)
   await fetchAllCryptoPrices();
-  var updated = await fetchAllStockPrices();
-  saveAll();
-  renderSubPage(currentSubPage);
-  buildSubNav();
-  toast('✅ Cours actualisés' + (updated&&updated.length?' ('+updated.length+' actions)':''));
+
+  // Stocks one by one with live counter
+  const stockList = assets.filter(a => a.cat==='actions' && (a.stockTicker||a.stockYahooTicker));
+  let done = 0, updated = 0;
+  for (const a of stockList) {
+    if (btn) btn.textContent = `↻ ${done}/${stockList.length}…`;
+    const res = await _fetchPriceForTicker(a.stockTicker||'', a.stockYahooTicker||'');
+    if (res) {
+      a.stockPrice = res.price; a.change24h = res.change;
+      a.priceUpdatedAt = new Date().toISOString();
+      if (res.usedTicker) a.stockYahooTicker = res.usedTicker;
+      updated++;
+    }
+    done++;
+  }
+  if (updated) saveAll();
+  if (btn) { btn.disabled = false; btn.textContent = '↻ Actualiser les cours'; }
+  renderSubPage(currentSubPage); buildSubNav();
+  toast(`✅ Cours actualisés — ${updated} action${updated>1?'s':''} + cryptos`);
 }
+
 async function refreshCatPrices(cat) {
-  toast('↻ Actualisation…');
-  if(cat==='crypto') await fetchAllCryptoPrices();
-  if(cat==='actions') await fetchAllStockPrices();
+  const btn = document.getElementById('refreshCatBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '↻ Actualisation…'; }
+  if (cat==='crypto') await fetchAllCryptoPrices();
+  if (cat==='actions') {
+    const list = assets.filter(a=>a.cat==='actions'&&(a.stockTicker||a.stockYahooTicker));
+    let done=0, ok=0;
+    for (const a of list) {
+      if(btn) btn.textContent='↻ '+done+'/'+list.length+'…';
+      const res = await _fetchPriceForTicker(a.stockTicker||'', a.stockYahooTicker||'');
+      if(res){ a.stockPrice=res.price; a.change24h=res.change; a.priceUpdatedAt=new Date().toISOString(); if(res.usedTicker)a.stockYahooTicker=res.usedTicker; ok++; }
+      done++;
+    }
+    if(ok) saveAll();
+  }
   if(cat==='per'||cat==='assurance-vie'){await fetchAllCryptoPrices();await fetchAllStockPrices();}
-  saveAll();
+  if(btn){ btn.disabled=false; btn.textContent='↻ Actualiser les cours'; }
   renderSubPage(currentSubPage);
   toast('✅ Cours actualisés');
 }
@@ -3752,20 +3934,87 @@ function calcLocatif(){
 }
 
 // ── Objectifs ─────────────────────────────────────────
-function openGoalModal(){
-  ['goalName','goalTarget','goalDeadline'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  document.getElementById('goalModal').classList.add('open');
+var _editGoalIdx = null;
+function onGoalTypeChange() { calcGoalPreview(); }
+function calcGoalPreview() {
+  const target = parseFloat(document.getElementById('goalTarget')?.value) || 0;
+  const monthly = parseFloat(document.getElementById('goalMonthlySav')?.value) || 0;
+  const deadline = document.getElementById('goalDeadline')?.value;
+  const type = document.getElementById('goalType')?.value || 'total';
+  const prev = document.getElementById('goalPreview');
+  if (!prev || !target) { if(prev) prev.style.display='none'; return; }
+
+  const total = getTotalVal();
+  const catVal = type === 'total' ? total : assets.filter(a=>a.cat===type).reduce((s,a)=>s+getAssetValue(a),0);
+  const remaining = Math.max(0, target - catVal);
+  const pct = target > 0 ? Math.min(100, catVal / target * 100) : 0;
+
+  let etaStr = '—';
+  if (remaining > 0 && monthly > 0) {
+    const r = 0.05 / 12; // assume 5%/an
+    let v = catVal, m = 0;
+    while (v < target && m < 600) { v = v * (1+r) + monthly; m++; }
+    if (m < 600) { const y = Math.floor(m/12); const mo = m%12; etaStr = y>0?y+'a '+(mo>0?mo+'m':''):mo+'m'; }
+    else etaStr = '> 50 ans';
+  } else if (deadline) {
+    const days = Math.ceil((new Date(deadline) - Date.now()) / 86400000);
+    etaStr = days > 0 ? days + ' j restants' : 'Échu';
+  }
+
+  const color = document.getElementById('goalColor')?.value || 'var(--gold2)';
+  prev.style.display = '';
+  prev.innerHTML = `
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <div><span style="color:var(--muted)">Actuel :</span> <b style="color:${color}">${fmt(catVal)}</b></div>
+      <div><span style="color:var(--muted)">Manque :</span> <b style="color:${remaining>0?'var(--red)':'var(--green)'}">${remaining>0?fmt(remaining):'✅ Atteint'}</b></div>
+      <div><span style="color:var(--muted)">Avancement :</span> <b>${pct.toFixed(1)}%</b></div>
+      ${monthly>0?`<div><span style="color:var(--muted)">ETA (${fmt(monthly)}/m) :</span> <b style="color:var(--gold2)">${etaStr}</b></div>`:''}
+    </div>`;
 }
-function closeGoalModal(){document.getElementById('goalModal').classList.remove('open');}
+function openGoalModal(idx) {
+  _editGoalIdx = (idx !== undefined && idx !== null) ? idx : null;
+  const titleEl = document.getElementById('goalModalTitle');
+  if (titleEl) titleEl.textContent = _editGoalIdx !== null ? 'Modifier l\'objectif' : 'Nouvel objectif';
+  const btnEl = document.getElementById('goalSaveBtn');
+  if (btnEl) btnEl.textContent = _editGoalIdx !== null ? 'Mettre à jour' : 'Enregistrer';
+
+  if (_editGoalIdx !== null) {
+    const g = goals[_editGoalIdx];
+    document.getElementById('goalName').value = g.name || '';
+    document.getElementById('goalTarget').value = g.target || '';
+    document.getElementById('goalDeadline').value = g.deadline || '';
+    document.getElementById('goalType').value = g.cat || 'total';
+    document.getElementById('goalColor').value = g.color || 'var(--gold2)';
+    document.getElementById('goalMonthlySav').value = g.monthlySav || '';
+  } else {
+    ['goalName','goalTarget','goalDeadline','goalMonthlySav'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    const tc = document.getElementById('goalType'); if(tc) tc.value='total';
+    const cc = document.getElementById('goalColor'); if(cc) cc.value='var(--gold2)';
+  }
+  document.getElementById('goalPreview').style.display='none';
+  document.getElementById('goalModal').classList.add('open');
+  calcGoalPreview();
+}
+function closeGoalModal(){document.getElementById('goalModal').classList.remove('open'); _editGoalIdx=null;}
 function saveGoal(){
   const name=document.getElementById('goalName').value.trim();
   const target=parseFloat(document.getElementById('goalTarget').value)||0;
   if(!name||!target){toast('⚠ Nom et montant requis');return;}
-  goals.push({name,target,deadline:document.getElementById('goalDeadline').value});
+  const g = {
+    name, target,
+    deadline: document.getElementById('goalDeadline').value,
+    cat: document.getElementById('goalType').value || 'total',
+    color: document.getElementById('goalColor').value || 'var(--gold2)',
+    monthlySav: parseFloat(document.getElementById('goalMonthlySav').value) || 0
+  };
+  if (_editGoalIdx !== null) { goals[_editGoalIdx] = g; }
+  else { goals.push(g); }
   localStorage.setItem('pat3_goals',JSON.stringify(goals));
-  closeGoalModal();renderSubPage(currentSubPage);toast('✅ Objectif ajouté');
+  closeGoalModal(); renderSubPage(currentSubPage);
+  toast(_editGoalIdx !== null ? '✅ Objectif mis à jour' : '✅ Objectif ajouté');
 }
 function deleteGoal(idx){
+  if(!confirm('Supprimer cet objectif ?')) return;
   goals.splice(idx,1);localStorage.setItem('pat3_goals',JSON.stringify(goals));renderSubPage(currentSubPage);
 }
 
