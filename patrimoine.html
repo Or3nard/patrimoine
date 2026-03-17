@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2026-03-17-2230 -->
+<!-- v2026-03-17-2300 -->
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -4163,28 +4163,28 @@ function shiftMonth(dir){
   renderDep();
 }
 function openTransModal(type){
-  editTransId = null;
-  transType   = type || 'income';
-  const titleEl = document.getElementById('transModalTitle');
-  if(titleEl) titleEl.textContent = 'Nouvelle transaction';
-  ['transDesc','transAmount','transNote'].forEach(id => {
-    const el = document.getElementById(id); if(el) el.value = '';
-  });
-  const dt = document.getElementById('transDate');
-  if(dt) dt.value = new Date().toISOString().slice(0,10);
-
-  // Always pre-build cats for income/expense (needed on first open)
-  _buildTransCats(type === 'transfer' ? 'expense' : type);
-
-  // Then update button states + show/hide sections
-  setTransType(type);
-
-  // Default account selection
-  setTransCompte(depCompte === 'global' ? 'perso' : depCompte);
-
-  document.getElementById('transModal').classList.add('open');
+  try {
+    editTransId = null;
+    transType   = type || 'income';
+    var titleEl = document.getElementById('transModalTitle');
+    if(titleEl) titleEl.textContent = 'Nouvelle transaction';
+    ['transDesc','transAmount','transNote'].forEach(function(eid){
+      var el = document.getElementById(eid); if(el) el.value = '';
+    });
+    var dt = document.getElementById('transDate');
+    if(dt) dt.value = new Date().toISOString().slice(0,10);
+    _buildTransCats(type === 'transfer' ? 'expense' : type);
+    setTransType(type);
+    setTransCompte(depCompte === 'global' ? 'perso' : depCompte);
+    var m = document.getElementById('transModal');
+    if(m){ m.classList.add('open'); m.style.display='flex'; }
+  } catch(e){ console.error('[openTransModal]',e); toast('⚠ '+e.message); }
 }
-function closeTransModal(){document.getElementById('transModal').classList.remove('open');editTransId=null;}
+function closeTransModal(){
+  var m = document.getElementById('transModal');
+  if(m){ m.classList.remove('open'); m.style.display=''; }
+  editTransId=null;
+}
 
 function setTransCompte(c) {
   const bp = document.getElementById('btnPerso');
@@ -4199,6 +4199,7 @@ function setTransCompte(c) {
 }
 
 function setTransType(type){
+  try {
   transType = type;
   const bI = document.getElementById('btnIncome');
   const bE = document.getElementById('btnExpense');
@@ -4231,6 +4232,7 @@ function setTransType(type){
   // Update save button label
   const saveBtn = document.getElementById('transSaveBtn');
   if(saveBtn) saveBtn.textContent = isTransfer ? '↔ Créer le virement' : 'Enregistrer';
+  } catch(e){ console.error('[setTransType]',e); }
 }
 
 function _buildTransCats(type){
@@ -4304,23 +4306,55 @@ function _deleteTrans(id){
 }
 
 function _editTrans(id){
-  const t=transactions.find(x=>x.id===id); if(!t) return;
-  editTransId=id;
-  const ti=document.getElementById('transModalTitle'); if(ti) ti.textContent='Modifier la transaction';
-  document.getElementById('transDesc').value   = t.desc||'';
-  document.getElementById('transAmount').value = t.amount||'';
-  document.getElementById('transDate').value   = t.date||'';
-  document.getElementById('transNote').value   = t.note||'';
-  if(t.type==='transfer') {
-    setTransType('transfer');
-    const fromEl=document.getElementById('transferFrom'); if(fromEl) fromEl.value=t.transferFrom||t.compte||'perso';
-    const toEl  =document.getElementById('transferTo');   if(toEl)   toEl.value  =t.transferTo  ||'commun';
-  } else {
-    _buildTransCats(t.type); setTransType(t.type);
-    setTransCompte(t.compte||'perso');
-    const sel=document.getElementById('transCat'); if(sel) sel.value=t.cat||'';
+  try {
+    const t = transactions.find(x=>x.id===id);
+    if(!t){ toast('⚠ Transaction introuvable (id: '+id+')'); return; }
+
+    editTransId = id;
+
+    // Safely set each field
+    function _set(elId, val) {
+      var el = document.getElementById(elId);
+      if(el) el.value = (val !== null && val !== undefined) ? String(val) : '';
+    }
+    _set('transModalTitle', null); // handled below via textContent
+    var ti = document.getElementById('transModalTitle');
+    if(ti) ti.textContent = 'Modifier la transaction';
+
+    _set('transDesc',   t.desc);
+    _set('transAmount', t.amount);
+    _set('transDate',   t.date);
+    _set('transNote',   t.note);
+
+    if(t.type === 'transfer') {
+      setTransType('transfer');
+      var fromEl = document.getElementById('transferFrom');
+      if(fromEl) fromEl.value = t.transferFrom || t.compte || 'perso';
+      var toEl   = document.getElementById('transferTo');
+      if(toEl)   toEl.value   = t.transferTo   || 'commun';
+    } else {
+      var safeType = (t.type === 'income' || t.type === 'expense') ? t.type : 'expense';
+      _buildTransCats(safeType);
+      setTransType(safeType);
+      setTransCompte(t.compte || 'perso');
+      // Restore category selection — try exact match, silently ignore if not found
+      var sel = document.getElementById('transCat');
+      if(sel && t.cat) sel.value = t.cat;
+    }
+
+    // Open modal — try classList first, fall back to direct style
+    var modal = document.getElementById('transModal');
+    if(modal) {
+      modal.classList.add('open');
+      modal.style.display = 'flex'; // explicit fallback
+    } else {
+      toast('⚠ Erreur : modal introuvable');
+    }
+
+  } catch(err) {
+    console.error('[_editTrans] erreur:', err);
+    toast('⚠ Erreur ouverture modal : ' + err.message);
   }
-  document.getElementById('transModal').classList.add('open');
 }
 function renderDep(){
   if(depView==='mensuel')_renderMensuel();else _renderAnnuel();
