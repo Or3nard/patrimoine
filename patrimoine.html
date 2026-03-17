@@ -331,7 +331,24 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
       maxlength="32" onkeydown="if(event.key==='Enter')unlockApp()">
     <button class="lock-btn" onclick="unlockApp()">🔓 Déverrouiller</button>
     <div class="lock-error" id="lockError"></div>
-    <div class="lock-hint">Première ouverture ? Ce code deviendra votre mot de passe permanent.</div>
+    <div class="lock-hint" id="lockHint">Première ouverture ? Ce code deviendra votre mot de passe sur cet appareil.</div>
+    <!-- Forgot password -->
+    <div style="margin-top:8px">
+      <button onclick="showResetConfirm()" style="background:none;border:none;color:#555;font-size:10px;cursor:pointer;font-family:'DM Mono',monospace;text-decoration:underline;padding:0">
+        Mot de passe oublié ?
+      </button>
+    </div>
+    <!-- Reset confirm (hidden by default) -->
+    <div id="resetConfirm" style="display:none;margin-top:10px;padding:12px;background:rgba(224,92,92,.1);border:1px solid rgba(224,92,92,.3);border-radius:8px;text-align:center">
+      <div style="font-size:11px;color:#e05c5c;margin-bottom:8px;font-family:'DM Mono',monospace;line-height:1.5">
+        ⚠ Réinitialiser le code sur cet appareil.<br>
+        <span style="color:#666">Vos données locales seront effacées.<br>Importez depuis Dropbox après.</span>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:center">
+        <button onclick="document.getElementById('resetConfirm').style.display='none'" style="background:none;border:1px solid #444;color:#666;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-family:'DM Mono',monospace">Annuler</button>
+        <button onclick="resetLock()" style="background:#e05c5c;border:none;color:#fff;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;font-family:'DM Mono',monospace">Réinitialiser</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1568,6 +1585,27 @@ function confirmImport() {
 function _hashPin(pin) {
   return CryptoJS.SHA256(pin + 'patrimoine_salt_2026').toString();
 }
+function showResetConfirm() {
+  document.getElementById('resetConfirm').style.display = 'block';
+  document.getElementById('lockError').textContent = '';
+}
+
+function resetLock() {
+  // Clear all local data and PIN
+  const keysToRemove = [
+    'pat3_lock_hash','pat3_lock_salt','pat3_assets','pat3_goals',
+    'pat3_ah','pat3_trans','pat3_credits','pat3_rates','pat3_av_key',
+    'pat3_db_token_enc','db_token','db_refresh','pat3_lastsave','pat3_lastsave_ts',
+    '_pruConverted','eur_usd_rate','eur_usd_ts','pat3_proj_savings'
+  ];
+  keysToRemove.forEach(function(k){ localStorage.removeItem(k); });
+  document.getElementById('resetConfirm').style.display = 'none';
+  document.getElementById('lockError').textContent = '';
+  document.getElementById('lockPin').value = '';
+  document.getElementById('lockHint').textContent = 'Code réinitialisé. Entrez un nouveau code (min. 4 caractères).';
+  document.getElementById('lockHint').style.color = '#4caf82';
+}
+
 function unlockApp() {
   const pin = document.getElementById('lockPin').value.trim();
   if (!pin || pin.length < 4) {
@@ -1577,13 +1615,22 @@ function unlockApp() {
   const stored = localStorage.getItem(LOCK_KEY);
   const hash   = _hashPin(pin);
   if (!stored) {
+    // First time on this device — set new PIN
     localStorage.setItem(LOCK_KEY, hash);
     localStorage.setItem(LOCK_SALT_KEY, pin.length.toString());
+    document.getElementById('lockHint').textContent = '✅ Code défini sur cet appareil.';
   } else if (stored !== hash) {
     document.getElementById('lockError').textContent = 'Code incorrect';
     document.getElementById('lockPin').value = '';
+    // After 3 wrong tries, show the reset hint
+    unlockApp._tries = (unlockApp._tries||0) + 1;
+    if(unlockApp._tries >= 3) {
+      document.getElementById('lockHint').textContent = '💡 Utilisez "Mot de passe oublié" ci-dessous pour réinitialiser.';
+      document.getElementById('lockHint').style.color = '#f59e0b';
+    }
     return;
   }
+  unlockApp._tries = 0;
   _aesKey = pin;
   document.getElementById('lockScreen').classList.add('hidden');
   _migrateCryptoPrices();
