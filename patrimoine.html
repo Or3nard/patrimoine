@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2026-03-17-2300 -->
+<!-- v2026-03-17-2315 -->
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -154,7 +154,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
 .action-btn.danger:hover{border-color:var(--red);color:var(--red);}
 
 /* MODALS */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(4px);z-index:500;display:none;align-items:center;justify-content:center;padding:16px;}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(4px);z-index:9000;display:none;align-items:center;justify-content:center;padding:16px;}
 .modal-overlay.open{display:flex;}
 .modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:540px;max-width:100%;animation:modalIn .2s ease;max-height:90vh;overflow-y:auto;}
 .ticker-wrap{position:relative;display:inline-block;}
@@ -292,7 +292,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
 <!-- ══ HEADER ══ -->
 <header>
   <div class="logo">PATRIMOINE<span> ◆</span></div>
-  <div class="header-date" id="headerDate"></div>
+  <div class="header-date" id="headerDate"></div><div style="font-size:9px;color:var(--muted);opacity:.5;letter-spacing:.05em" id="versionBadge">v2300</div>
   <div class="header-actions">
     <button class="btn btn-ghost" onclick="openSettings()" style="font-size:10px;padding:5px 11px" title="Paramètres & Clé API">⚙</button>
     <button class="btn btn-ghost" onclick="triggerImport()" style="font-size:10px;padding:5px 11px">↑ Importer</button>
@@ -4306,6 +4306,7 @@ function _deleteTrans(id){
 }
 
 function _editTrans(id){
+  console.log('[_editTrans] called, id=', id, 'modal=', document.getElementById('transModal'));
   try {
     const t = transactions.find(x=>x.id===id);
     if(!t){ toast('⚠ Transaction introuvable (id: '+id+')'); return; }
@@ -4356,6 +4357,8 @@ function _editTrans(id){
     toast('⚠ Erreur ouverture modal : ' + err.message);
   }
 }
+window._editTrans = _editTrans;
+window._deleteTrans = _deleteTrans;
 function renderDep(){
   if(depView==='mensuel')_renderMensuel();else _renderAnnuel();
 }
