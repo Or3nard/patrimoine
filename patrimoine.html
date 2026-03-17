@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2026-03-17-2045 -->
+<!-- v2026-03-17-2200 -->
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -217,6 +217,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
 .type-badge{font-size:9px;padding:2px 7px;border-radius:4px;letter-spacing:.05em;text-transform:uppercase;}
 .type-badge.income{background:rgba(76,175,130,.1);color:var(--green);border:1px solid rgba(76,175,130,.3);}
 .type-badge.expense{background:rgba(224,92,92,.09);color:var(--red);border:1px solid rgba(224,92,92,.25);}
+.type-badge.transfer{background:rgba(92,141,224,.09);color:var(--blue);border:1px solid rgba(92,141,224,.3);}
 .budget-table{width:100%;border-collapse:collapse;}
 .budget-table th{font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;padding:0 13px 11px;text-align:left;font-weight:400;border-bottom:1px solid var(--border);}
 .budget-row{border-bottom:1px solid rgba(37,40,48,.4);transition:background .12s;cursor:pointer;}
@@ -357,6 +358,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
     <div style="display:flex;gap:8px">
       <button class="btn btn-green" onclick="openTransModal('income')">+ Revenu</button>
       <button class="btn btn-red"   onclick="openTransModal('expense')">+ Dépense</button>
+      <button class="btn btn-blue"  onclick="openTransModal('transfer')">↔ Virement</button>
     </div>
   </div>
 
@@ -394,24 +396,34 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
     <div id="depGlobalView" style="display:none">
       <!-- KPIs globaux -->
       <div class="kpi-grid4" style="margin-bottom:18px">
-        <div class="kpi"><div class="kpi-label">Total revenus</div><div class="kpi-value sm" id="gInc" style="color:var(--green)">0 €</div><div class="kpi-sub">tous comptes</div></div>
-        <div class="kpi"><div class="kpi-label">Total dépenses</div><div class="kpi-value sm" id="gExp" style="color:var(--red)">0 €</div><div class="kpi-sub">tous comptes</div></div>
+        <div class="kpi"><div class="kpi-label">Total revenus</div><div class="kpi-value sm" id="gInc" style="color:var(--green)">0 €</div><div class="kpi-sub">hors virements internes</div></div>
+        <div class="kpi"><div class="kpi-label">Total dépenses</div><div class="kpi-value sm" id="gExp" style="color:var(--red)">0 €</div><div class="kpi-sub">hors virements internes</div></div>
         <div class="kpi"><div class="kpi-label">Solde global</div><div class="kpi-value sm" id="gSolde">0 €</div><div class="kpi-sub" id="gSoldeSub">—</div></div>
-        <div class="kpi"><div class="kpi-label">Taux d'épargne global</div><div class="kpi-value sm" id="gRate" style="color:var(--blue)">0%</div><div class="kpi-sub">tous comptes</div></div>
+        <div class="kpi"><div class="kpi-label">Virements internes</div><div class="kpi-value sm" id="gTransferTotal" style="color:var(--blue)">0 €</div><div class="kpi-sub" id="gTransferSub">ce mois-ci</div></div>
+      </div>
+      <!-- Taux d'épargne séparé -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:8px">
+        <span style="font-size:12px;color:var(--muted)">Taux d'épargne global :</span>
+        <span style="font-size:16px;font-weight:700;color:var(--blue)" id="gRate">—</span>
+        <span style="font-size:11px;color:var(--muted)">· Revenus nets – Dépenses nettes (virements exclus)</span>
       </div>
       <!-- Comparaison perso / commun -->
       <div class="grid-2" style="margin-bottom:18px">
         <div class="panel">
           <div class="panel-header"><span class="panel-title">👤 Personnel</span><span class="panel-badge" id="gPersoSolde">—</span></div>
           <div class="panel-body" style="padding:8px 0">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px 12px">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:0 16px 12px">
               <div style="background:rgba(80,200,120,.07);border-radius:8px;padding:10px;text-align:center">
                 <div style="font-size:10px;color:var(--muted)">Revenus</div>
-                <div style="font-size:16px;font-weight:700;color:var(--green)" id="gPersoInc">0 €</div>
+                <div style="font-size:15px;font-weight:700;color:var(--green)" id="gPersoInc">0 €</div>
               </div>
               <div style="background:rgba(220,80,60,.07);border-radius:8px;padding:10px;text-align:center">
                 <div style="font-size:10px;color:var(--muted)">Dépenses</div>
-                <div style="font-size:16px;font-weight:700;color:var(--red)" id="gPersoExp">0 €</div>
+                <div style="font-size:15px;font-weight:700;color:var(--red)" id="gPersoExp">0 €</div>
+              </div>
+              <div style="background:rgba(92,141,224,.07);border-radius:8px;padding:10px;text-align:center">
+                <div style="font-size:10px;color:var(--muted)">Virements →</div>
+                <div style="font-size:15px;font-weight:700;color:var(--blue)" id="gPersoTransferOut">0 €</div>
               </div>
             </div>
             <div id="gPersoTopDep" style="padding:0 16px"></div>
@@ -420,14 +432,18 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
         <div class="panel">
           <div class="panel-header"><span class="panel-title">👫 Commun</span><span class="panel-badge" id="gCommunSolde">—</span></div>
           <div class="panel-body" style="padding:8px 0">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px 12px">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:0 16px 12px">
               <div style="background:rgba(80,200,120,.07);border-radius:8px;padding:10px;text-align:center">
-                <div style="font-size:10px;color:var(--muted)">Revenus</div>
-                <div style="font-size:16px;font-weight:700;color:var(--green)" id="gCommunInc">0 €</div>
+                <div style="font-size:10px;color:var(--muted)">Revenus ext.</div>
+                <div style="font-size:15px;font-weight:700;color:var(--green)" id="gCommunInc">0 €</div>
               </div>
               <div style="background:rgba(220,80,60,.07);border-radius:8px;padding:10px;text-align:center">
                 <div style="font-size:10px;color:var(--muted)">Dépenses</div>
-                <div style="font-size:16px;font-weight:700;color:var(--red)" id="gCommunExp">0 €</div>
+                <div style="font-size:15px;font-weight:700;color:var(--red)" id="gCommunExp">0 €</div>
+              </div>
+              <div style="background:rgba(92,141,224,.07);border-radius:8px;padding:10px;text-align:center">
+                <div style="font-size:10px;color:var(--muted)">← Virements reçus</div>
+                <div style="font-size:15px;font-weight:700;color:var(--blue)" id="gCommunTransferIn">0 €</div>
               </div>
             </div>
             <div id="gCommunTopDep" style="padding:0 16px"></div>
@@ -1024,20 +1040,71 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
 <div class="modal-overlay" id="transModal">
 <div class="modal sm">
   <div class="modal-title" id="transModalTitle">Nouvelle transaction</div>
-  <div class="form-group"><label class="form-label">Type</label><div style="display:flex;gap:7px"><button class="btn" id="btnIncome" onclick="setTransType('income')" style="flex:1;justify-content:center">✦ Revenu</button><button class="btn" id="btnExpense" onclick="setTransType('expense')" style="flex:1;justify-content:center">✕ Dépense</button></div></div>
-  <div class="form-group"><label class="form-label">Description</label><input class="form-input" id="transDesc" placeholder="ex: Salaire, Loyer..."></div>
-  <div class="form-row">
-    <div class="form-group"><label class="form-label">Montant (€)</label><input class="form-input" id="transAmount" type="number" step="0.01" placeholder="0"></div>
-    <div class="form-group"><label class="form-label">Date</label><input class="form-input" id="transDate" type="date"></div>
-  </div>
-  <div class="form-group"><label class="form-label">Catégorie</label><select class="form-select" id="transCat"></select></div>
-  <div class="form-group"><label class="form-label">Compte</label>
-    <div style="display:flex;gap:7px" id="transCompteWrap">
-      <button class="btn active" id="btnPerso" onclick="setTransCompte('perso')" style="flex:1;justify-content:center">👤 Personnel</button>
-      <button class="btn" id="btnCommun" onclick="setTransCompte('commun')" style="flex:1;justify-content:center">👫 Commun</button>
+
+  <!-- Type selector -->
+  <div class="form-group"><label class="form-label">Type</label>
+    <div style="display:flex;gap:7px">
+      <button class="btn" id="btnIncome"   onclick="setTransType('income')"   style="flex:1;justify-content:center">✦ Revenu</button>
+      <button class="btn" id="btnExpense"  onclick="setTransType('expense')"  style="flex:1;justify-content:center">✕ Dépense</button>
+      <button class="btn" id="btnTransfer" onclick="setTransType('transfer')" style="flex:1;justify-content:center">↔ Virement</button>
+    </div>
+    <!-- Transfer info banner -->
+    <div id="transferInfo" style="display:none;margin-top:8px;padding:8px 12px;background:rgba(92,141,224,.08);border:1px solid rgba(92,141,224,.25);border-radius:7px;font-size:11px;color:var(--blue);line-height:1.6">
+      ↔ Un virement interne crée automatiquement les deux entrées liées. Il <b>n'est pas compté</b> dans les revenus ni les dépenses des totaux.
     </div>
   </div>
-  <div class="form-group"><label class="form-label">Note</label><input class="form-input" id="transNote" placeholder="Détail..."></div>
+
+  <div class="form-group"><label class="form-label">Description</label>
+    <input class="form-input" id="transDesc" placeholder="ex: Salaire, Loyer, Virement charges...">
+  </div>
+
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Montant (€)</label>
+      <input class="form-input" id="transAmount" type="number" step="0.01" placeholder="0">
+    </div>
+    <div class="form-group"><label class="form-label">Date</label>
+      <input class="form-input" id="transDate" type="date">
+    </div>
+  </div>
+
+  <!-- Catégorie — masquée pour les virements -->
+  <div class="form-group" id="transCatGroup">
+    <label class="form-label">Catégorie</label>
+    <select class="form-select" id="transCat"></select>
+  </div>
+
+  <!-- Compte source (income/expense) -->
+  <div class="form-group" id="transCompteGroup">
+    <label class="form-label">Compte</label>
+    <div style="display:flex;gap:7px" id="transCompteWrap">
+      <button class="btn active" id="btnPerso"  onclick="setTransCompte('perso')"  style="flex:1;justify-content:center">👤 Personnel</button>
+      <button class="btn"        id="btnCommun" onclick="setTransCompte('commun')" style="flex:1;justify-content:center">👫 Commun</button>
+    </div>
+  </div>
+
+  <!-- Comptes virement (de → vers) -->
+  <div id="transferCompteGroup" style="display:none">
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Compte source</label>
+        <select class="form-select" id="transferFrom">
+          <option value="perso">👤 Personnel</option>
+          <option value="commun">👫 Commun</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Compte destination</label>
+        <select class="form-select" id="transferTo">
+          <option value="commun">👫 Commun</option>
+          <option value="perso">👤 Personnel</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-group"><label class="form-label">Note</label>
+    <input class="form-input" id="transNote" placeholder="Détail...">
+  </div>
   <div class="modal-footer">
     <button class="btn btn-ghost" onclick="closeTransModal()">Annuler</button>
     <button class="btn btn-gold" onclick="saveTrans()" id="transSaveBtn">Enregistrer</button>
@@ -4086,16 +4153,18 @@ function shiftMonth(dir){
   renderDep();
 }
 function openTransModal(type){
-  editTransId=null;transType=type||'income';
+  editTransId=null; transType=type||'income';
   const titleEl=document.getElementById('transModalTitle');
-  if(titleEl)titleEl.textContent='Nouvelle transaction';
+  if(titleEl) titleEl.textContent='Nouvelle transaction';
   ['transDesc','transAmount','transNote'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  const dt=document.getElementById('transDate');if(dt)dt.value=new Date().toISOString().slice(0,10);
-  _buildTransCats(type);setTransType(type);
+  const dt=document.getElementById('transDate'); if(dt) dt.value=new Date().toISOString().slice(0,10);
+  _buildTransCats(type);
+  setTransType(type);
   setTransCompte(depCompte==='global'?'perso':depCompte);
   document.getElementById('transModal').classList.add('open');
 }
 function closeTransModal(){document.getElementById('transModal').classList.remove('open');editTransId=null;}
+
 function setTransCompte(c) {
   const bp = document.getElementById('btnPerso');
   const bc = document.getElementById('btnCommun');
@@ -4110,47 +4179,117 @@ function setTransCompte(c) {
 
 function setTransType(type){
   transType=type;
-  const bI=document.getElementById('btnIncome'),bE=document.getElementById('btnExpense');
-  if(bI)bI.className='btn '+(type==='income'?'btn-green':'btn-ghost');
-  if(bE)bE.className='btn '+(type==='expense'?'btn-red':'btn-ghost');
-  _buildTransCats(type);
+  const bI=document.getElementById('btnIncome');
+  const bE=document.getElementById('btnExpense');
+  const bT=document.getElementById('btnTransfer');
+  if(bI) bI.className='btn '+(type==='income' ?'btn-green':'btn-ghost');
+  if(bE) bE.className='btn '+(type==='expense'?'btn-red'  :'btn-ghost');
+  if(bT) bT.className='btn '+(type==='transfer'?'btn-blue' :'btn-ghost');
+
+  const isTransfer = type==='transfer';
+  const catGroup    = document.getElementById('transCatGroup');
+  const compteGroup = document.getElementById('transCompteGroup');
+  const tGroup      = document.getElementById('transferCompteGroup');
+  const info        = document.getElementById('transferInfo');
+  if(catGroup)    catGroup.style.display    = isTransfer ? 'none' : '';
+  if(compteGroup) compteGroup.style.display = isTransfer ? 'none' : '';
+  if(tGroup)      tGroup.style.display      = isTransfer ? '' : 'none';
+  if(info)        info.style.display        = isTransfer ? '' : 'none';
+
+  if(!isTransfer) _buildTransCats(type);
+
+  // Disable category for transfer in save
+  const saveBtn = document.getElementById('transSaveBtn');
+  if(saveBtn) saveBtn.textContent = isTransfer ? '↔ Créer le virement' : 'Enregistrer';
 }
+
 function _buildTransCats(type){
   const sel=document.getElementById('transCat');if(!sel)return;
   sel.innerHTML=(type==='income'?IC:EC).map(c=>`<option value="${c.id}">${c.icon} ${c.label}</option>`).join('');
 }
+
 function saveTrans(){
-  const desc=document.getElementById('transDesc').value.trim();
-  const amount=parseFloat(document.getElementById('transAmount').value)||0;
-  const date=document.getElementById('transDate').value;
+  const desc   = document.getElementById('transDesc').value.trim();
+  const amount = parseFloat(document.getElementById('transAmount').value)||0;
+  const date   = document.getElementById('transDate').value;
   if(!desc||!amount||!date){toast('⚠ Description, montant et date requis');return;}
-  const _wrap=document.getElementById('transCompteWrap');
-  const _compte=(_wrap&&_wrap.dataset.compte)||depCompte||'perso';
-  const t={id:editTransId||'tr_'+Date.now(),type:transType,desc,amount,date,
-    cat:document.getElementById('transCat').value,
-    note:document.getElementById('transNote').value.trim(),
-    compte:_compte};
-  if(editTransId){const i=transactions.findIndex(x=>x.id===editTransId);if(i>=0)transactions[i]=t;}
-  else transactions.push(t);
+
+  if(transType === 'transfer') {
+    // ── Virement interne ──────────────────────────────────
+    if(editTransId) {
+      // editing a transfer: just update desc/amount/date/note on both legs
+      const existing = transactions.find(x=>x.id===editTransId);
+      if(existing) {
+        const tid = existing.transferId;
+        transactions.forEach(t => {
+          if(t.id===editTransId || (tid && t.transferId===tid && t.id!==editTransId)) {
+            t.desc=desc; t.amount=amount; t.date=date;
+            t.note=document.getElementById('transNote').value.trim();
+          }
+        });
+      }
+    } else {
+      const from = document.getElementById('transferFrom')?.value || 'perso';
+      const to   = document.getElementById('transferTo')?.value   || 'commun';
+      if(from===to){toast('⚠ Les deux comptes doivent être différents');return;}
+      const tid = 'tf_'+Date.now();
+      const note = document.getElementById('transNote').value.trim();
+      // Sortie du compte source
+      transactions.push({id:'tr_'+Date.now()+'_out', type:'transfer', transferDir:'out',
+        transferId:tid, desc, amount, date, note, compte:from,
+        transferFrom:from, transferTo:to, cat:'virement'});
+      // Entrée dans le compte destination
+      transactions.push({id:'tr_'+(Date.now()+1)+'_in', type:'transfer', transferDir:'in',
+        transferId:tid, desc, amount, date, note, compte:to,
+        transferFrom:from, transferTo:to, cat:'virement'});
+    }
+  } else {
+    // ── Revenu / Dépense normale ──────────────────────────
+    const _wrap   = document.getElementById('transCompteWrap');
+    const _compte = (_wrap&&_wrap.dataset.compte)||depCompte||'perso';
+    const t = {id:editTransId||'tr_'+Date.now(), type:transType, desc, amount, date,
+      cat:document.getElementById('transCat').value,
+      note:document.getElementById('transNote').value.trim(),
+      compte:_compte};
+    if(editTransId){const i=transactions.findIndex(x=>x.id===editTransId);if(i>=0)transactions[i]=t;}
+    else transactions.push(t);
+  }
+
   localStorage.setItem('pat3_trans',JSON.stringify(transactions));
-  closeTransModal();renderDep();toast(editTransId?'✅ Transaction modifiée':'✅ Transaction ajoutée');
+  closeTransModal(); renderDep();
+  toast(editTransId?'✅ Transaction modifiée':'✅ Transaction ajoutée');
 }
+
 function _deleteTrans(id){
   if(!confirm('Supprimer ?'))return;
-  transactions=transactions.filter(t=>t.id!==id);
-  localStorage.setItem('pat3_trans',JSON.stringify(transactions));renderDep();
+  const t = transactions.find(x=>x.id===id);
+  if(t && t.type==='transfer' && t.transferId) {
+    // delete both legs of the transfer
+    transactions = transactions.filter(x=>x.transferId!==t.transferId);
+    toast('✅ Virement supprimé (2 entrées)');
+  } else {
+    transactions = transactions.filter(x=>x.id!==id);
+  }
+  localStorage.setItem('pat3_trans',JSON.stringify(transactions)); renderDep();
 }
+
 function _editTrans(id){
-  const t=transactions.find(x=>x.id===id);if(!t)return;
+  const t=transactions.find(x=>x.id===id); if(!t) return;
   editTransId=id;
-  const ti=document.getElementById('transModalTitle');if(ti)ti.textContent='Modifier la transaction';
-  document.getElementById('transDesc').value=t.desc||'';
-  document.getElementById('transAmount').value=t.amount||'';
-  document.getElementById('transDate').value=t.date||'';
-  document.getElementById('transNote').value=t.note||'';
-  _buildTransCats(t.type);setTransType(t.type);
-  setTransCompte(t.compte||'perso');
-  const sel=document.getElementById('transCat');if(sel)sel.value=t.cat||'';
+  const ti=document.getElementById('transModalTitle'); if(ti) ti.textContent='Modifier la transaction';
+  document.getElementById('transDesc').value   = t.desc||'';
+  document.getElementById('transAmount').value = t.amount||'';
+  document.getElementById('transDate').value   = t.date||'';
+  document.getElementById('transNote').value   = t.note||'';
+  if(t.type==='transfer') {
+    setTransType('transfer');
+    const fromEl=document.getElementById('transferFrom'); if(fromEl) fromEl.value=t.transferFrom||t.compte||'perso';
+    const toEl  =document.getElementById('transferTo');   if(toEl)   toEl.value  =t.transferTo  ||'commun';
+  } else {
+    _buildTransCats(t.type); setTransType(t.type);
+    setTransCompte(t.compte||'perso');
+    const sel=document.getElementById('transCat'); if(sel) sel.value=t.cat||'';
+  }
   document.getElementById('transModal').classList.add('open');
 }
 function renderDep(){
@@ -4177,6 +4316,7 @@ function _renderMensuel(){
   const mT=transactions.filter(t=>{const d=new Date(t.date);return d.getFullYear()===navY&&d.getMonth()===navM&&_filterCompte(t);});
   const pm=navM===0?11:navM-1,py=navM===0?navY-1:navY;
   const pT=transactions.filter(t=>{const d=new Date(t.date);return d.getFullYear()===py&&d.getMonth()===pm&&_filterCompte(t);});
+  // Exclude transfers from income/expense totals
   const inc=mT.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
   const exp=mT.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
   const pInc=pT.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
@@ -4198,19 +4338,25 @@ function _renderMensuel(){
     else{
       if(empty)empty.style.display='none';
       body.innerHTML=[...mT].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(t=>{
+        const isTransfer = t.type==='transfer';
         const cats=t.type==='income'?IC:EC;
-        const cd=cats.find(c=>c.id===t.cat)||cats[cats.length-1];
+        const cd=isTransfer?{icon:'↔',label:'Virement'}:(cats.find(c=>c.id===t.cat)||cats[cats.length-1]);
         const compteLabel=t.compte==='commun'?'<span style="font-size:10px;color:#b464dc">👫</span>':'<span style="font-size:10px;color:var(--blue)">👤</span>';
-        return`<tr class="budget-row">
+        const typeBadge = isTransfer
+          ? `<span class="type-badge transfer">${t.transferDir==='out'?'↦ Vers '+(t.transferTo==='commun'?'Commun':'Perso'):'↤ De '+(t.transferFrom==='perso'?'Perso':'Commun')}</span>`
+          : `<span class="type-badge ${t.type}">${t.type==='income'?'Revenu':'Dépense'}</span>`;
+        const amountColor = isTransfer?'var(--blue)':t.type==='income'?'var(--green)':'var(--red)';
+        const amountSign  = isTransfer?(t.transferDir==='out'?'→ ':'← '):(t.type==='income'?'+':'−');
+        return`<tr class="budget-row" style="${isTransfer?'opacity:.8;':''}">
           <td style="padding-left:20px">${esc(t.desc)}</td>
           <td><span style="font-size:11px">${cd.icon} ${cd.label}</span></td>
-          <td><span class="type-badge ${t.type==='income'?'income':'expense'}">${t.type==='income'?'Revenu':'Dépense'}</span></td>
+          <td>${typeBadge}</td>
           <td>${compteLabel}</td>
           <td style="color:var(--muted)">${fmtDate(t.date)}</td>
-          <td style="text-align:right;font-weight:500;color:${t.type==='income'?'var(--green)':'var(--red)'}">${t.type==='income'?'+':'−'}${fmt(t.amount)}</td>
+          <td style="text-align:right;font-weight:500;color:${amountColor}">${amountSign}${fmt(t.amount)}</td>
           <td style="text-align:right;padding-right:20px">
             <button class="action-btn" onclick="_editTrans('${t.id}')">✎</button>
-            <button class="action-btn danger" onclick="_deleteTrans('${t.id}')">✕</button>
+            <button class="action-btn danger" onclick="_deleteTrans('${t.id}')" title="${isTransfer?'Supprimer les 2 entrées':''}">✕</button>
           </td></tr>`;
       }).join('');
     }
@@ -4218,31 +4364,49 @@ function _renderMensuel(){
 }
 
 function _renderMensuelGlobal(){
-  const allM  = transactions.filter(t=>{const d=new Date(t.date);return d.getFullYear()===navY&&d.getMonth()===navM;});
+  const allM   = transactions.filter(t=>{const d=new Date(t.date);return d.getFullYear()===navY&&d.getMonth()===navM;});
   const persoM = allM.filter(t=>!t.compte||t.compte==='perso');
   const communM= allM.filter(t=>t.compte==='commun');
 
-  const _sum=(list,type)=>list.filter(t=>t.type===type).reduce((s,t)=>s+t.amount,0);
-  const gInc=_sum(allM,'income'), gExp=_sum(allM,'expense'), gSolde=gInc-gExp;
-  const pInc=_sum(persoM,'income'),pExp=_sum(persoM,'expense'),pSolde=pInc-pExp;
-  const cInc=_sum(communM,'income'),cExp=_sum(communM,'expense'),cSolde=cInc-cExp;
+  // Transfers are excluded from income/expense totals — they're internal movements
+  const _sum=(list,type)=>list.filter(t=>t.type===type&&t.type!=='transfer').reduce((s,t)=>s+t.amount,0);
+  const _sumNoTf=(list,type)=>list.filter(t=>t.type===type).reduce((s,t)=>s+t.amount,0);
+
+  const gInc=_sumNoTf(allM.filter(t=>t.type!=='transfer'),'income');
+  const gExp=_sumNoTf(allM.filter(t=>t.type!=='transfer'),'expense');
+  const gSolde=gInc-gExp;
+  const pInc=_sum(persoM,'income'), pExp=_sum(persoM,'expense'), pSolde=pInc-pExp;
+  const cInc=_sum(communM,'income'), cExp=_sum(communM,'expense'), cSolde=cInc-cExp;
   const gRate=gInc>0?(gInc-gExp)/gInc*100:0;
 
-  const _s=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
-  _s('gInc',fmt(gInc));_s('gExp',fmt(gExp));_s('gRate',gRate.toFixed(0)+'%');
-  const gs=document.getElementById('gSolde');if(gs){gs.textContent=fmt(gSolde);gs.style.color=gSolde>=0?'var(--green)':'var(--red)';}
-  const gss=document.getElementById('gSoldeSub');if(gss)gss.textContent=gInc>0?gRate.toFixed(0)+'% d\'épargne':'—';
+  // Transfer summary for the month
+  const monthTransfers = allM.filter(t=>t.type==='transfer'&&t.transferDir==='out');
+  const totalTransferred = monthTransfers.reduce((s,t)=>s+t.amount,0);
 
-  // Perso panel
-  _s('gPersoInc',fmt(pInc));_s('gPersoExp',fmt(pExp));
+  const _s=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  _s('gInc',fmt(gInc)); _s('gExp',fmt(gExp));
+  _s('gRate', gInc>0 ? gRate.toFixed(0)+'%' : '—');
+  _s('gTransferTotal', fmt(totalTransferred));
+  const gTransSub = document.getElementById('gTransferSub');
+  if(gTransSub) gTransSub.textContent = monthTransfers.length ? monthTransfers.length+' virement'+(monthTransfers.length>1?'s':'')+' ce mois' : 'aucun ce mois';
+  const gs=document.getElementById('gSolde');
+  if(gs){gs.textContent=fmt(gSolde);gs.style.color=gSolde>=0?'var(--green)':'var(--red)';}
+  const gss=document.getElementById('gSoldeSub');
+  if(gss)gss.textContent=gInc>0?gRate.toFixed(0)+'% d\'épargne':'—';
+
+  // Perso panel — transfer out
+  const pTransOut = persoM.filter(t=>t.type==='transfer'&&t.transferDir==='out').reduce((s,t)=>s+t.amount,0);
+  _s('gPersoInc',fmt(pInc)); _s('gPersoExp',fmt(pExp)); _s('gPersoTransferOut',fmt(pTransOut));
   const gpb=document.getElementById('gPersoSolde');
   if(gpb){gpb.textContent=(pSolde>=0?'+':'')+fmt(pSolde);gpb.style.color=pSolde>=0?'var(--green)':'var(--red)';}
-  // Commun panel
-  _s('gCommunInc',fmt(cInc));_s('gCommunExp',fmt(cExp));
+
+  // Commun panel — transfer in
+  const cTransIn = communM.filter(t=>t.type==='transfer'&&t.transferDir==='in').reduce((s,t)=>s+t.amount,0);
+  _s('gCommunInc',fmt(cInc)); _s('gCommunExp',fmt(cExp)); _s('gCommunTransferIn',fmt(cTransIn));
   const gcb=document.getElementById('gCommunSolde');
   if(gcb){gcb.textContent=(cSolde>=0?'+':'')+fmt(cSolde);gcb.style.color=cSolde>=0?'var(--green)':'var(--red)';}
 
-  // Top dépenses par compte
+  // Top dépenses par compte (exclude transfers)
   const _topDep=(list,containerId)=>{
     const el=document.getElementById(containerId);if(!el)return;
     const exps=list.filter(t=>t.type==='expense');
@@ -4265,7 +4429,7 @@ function _renderMensuelGlobal(){
   _topDep(persoM,'gPersoTopDep');
   _topDep(communM,'gCommunTopDep');
 
-  // All transactions table
+  // All transactions table (includes transfers with special display)
   const badge=document.getElementById('gTransBadge');if(badge)badge.textContent=allM.length;
   const body=document.getElementById('gTransBody'),empty=document.getElementById('gTransEmpty');
   if(body){
@@ -4273,21 +4437,31 @@ function _renderMensuelGlobal(){
     else{
       if(empty)empty.style.display='none';
       body.innerHTML=[...allM].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(t=>{
-        const cats=t.type==='income'?IC:EC;
-        const cd=cats.find(c=>c.id===t.cat)||cats[cats.length-1];
-        const compteLabel=t.compte==='commun'
+        const isTransfer = t.type==='transfer';
+        const cats = t.type==='income'?IC:EC;
+        const cd   = isTransfer ? {icon:'↔',label:'Virement'} : (cats.find(c=>c.id===t.cat)||cats[cats.length-1]);
+        const compteLabel = t.compte==='commun'
           ?'<span style="font-size:11px;color:#b464dc;font-weight:600">👫 Commun</span>'
           :'<span style="font-size:11px;color:var(--blue)">👤 Perso</span>';
-        return`<tr class="budget-row">
-          <td style="padding-left:20px">${esc(t.desc)}</td>
+        const typeBadge = isTransfer
+          ? `<span class="type-badge transfer">↔ ${t.transferDir==='out'?'→ '+(t.transferTo==='commun'?'Commun':'Perso'):'← '+(t.transferFrom==='perso'?'Perso':'Commun')}</span>`
+          : `<span class="type-badge ${t.type}">${t.type==='income'?'Revenu':'Dépense'}</span>`;
+        const amountColor = isTransfer ? 'var(--blue)' : t.type==='income'?'var(--green)':'var(--red)';
+        const amountSign  = isTransfer
+          ? (t.transferDir==='out'?'→ ':'← ')
+          : (t.type==='income'?'+':'−');
+        const rowStyle = isTransfer ? 'opacity:.85;' : '';
+        return`<tr class="budget-row" style="${rowStyle}">
+          <td style="padding-left:20px">${esc(t.desc)}${isTransfer?`<div style="font-size:10px;color:var(--muted)">${t.transferFrom==='perso'?'👤 Perso':'👫 Commun'} → ${t.transferTo==='commun'?'👫 Commun':'👤 Perso'}</div>`:''}
+          </td>
           <td><span style="font-size:11px">${cd.icon} ${cd.label}</span></td>
-          <td><span class="type-badge ${t.type==='income'?'income':'expense'}">${t.type==='income'?'Revenu':'Dépense'}</span></td>
+          <td>${typeBadge}</td>
           <td>${compteLabel}</td>
           <td style="color:var(--muted)">${fmtDate(t.date)}</td>
-          <td style="text-align:right;font-weight:500;color:${t.type==='income'?'var(--green)':'var(--red)'}">${t.type==='income'?'+':'−'}${fmt(t.amount)}</td>
+          <td style="text-align:right;font-weight:500;color:${amountColor}">${amountSign}${fmt(t.amount)}</td>
           <td style="text-align:right;padding-right:20px">
             <button class="action-btn" onclick="_editTrans('${t.id}')">✎</button>
-            <button class="action-btn danger" onclick="_deleteTrans('${t.id}')">✕</button>
+            <button class="action-btn danger" onclick="_deleteTrans('${t.id}')" title="${isTransfer?'Supprimer les 2 entrées liées':'Supprimer'}">✕</button>
           </td></tr>`;
       }).join('');
     }
@@ -4324,6 +4498,7 @@ function _renderAnnuel(){
   if(ys)ys.innerHTML=years.map(y=>`<button class="year-btn${y===selYear?' active':''}" onclick="selYear=${y};_renderAnnuel()">${y}</button>`).join('');
   const _filterCompteA=t=>depCompte==='global'?true:depCompte==='commun'?t.compte==='commun':(!t.compte||t.compte==='perso');
   const yT=transactions.filter(t=>new Date(t.date).getFullYear()===selYear);
+  // Exclude transfers from income/expense aggregations
   const inc=yT.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
   const exp=yT.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
   const solde=inc-exp,rate=inc>0?(inc-exp)/inc*100:0;
@@ -4331,7 +4506,7 @@ function _renderAnnuel(){
   _s('aInc',fmt(inc));_s('aExp',fmt(exp));_s('aRate',rate.toFixed(0)+'%');
   const aS=document.getElementById('aSolde');if(aS){aS.textContent=fmt(solde);aS.style.color=solde>=0?'var(--green)':'var(--red)';}
   const incByM=Array(12).fill(0),expByM=Array(12).fill(0);
-  yT.forEach(t=>{const m=new Date(t.date).getMonth();if(t.type==='income')incByM[m]+=t.amount;else expByM[m]+=t.amount;});
+  yT.filter(t=>t.type!=='transfer').forEach(t=>{const m=new Date(t.date).getMonth();if(t.type==='income')incByM[m]+=t.amount;else expByM[m]+=t.amount;});
   if(annualBarC){annualBarC.data.datasets[0].data=incByM;annualBarC.data.datasets[1].data=expByM;annualBarC.update('none');}
   const _break=(type,cats,elId)=>{
     const list=yT.filter(t=>t.type===type),total=list.reduce((s,t)=>s+t.amount,0),byCat={};
