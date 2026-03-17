@@ -338,16 +338,31 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
 <!-- ══ PAGE DÉPENSES ══ -->
 <div class="page" id="page-depenses">
 <div class="page-inner">
+
+  <!-- Barre du haut : compte + vue + boutons -->
   <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px">
-    <div class="view-toggle">
-      <button class="view-btn active" onclick="setDepView('mensuel',this)">Mensuel</button>
-      <button class="view-btn" onclick="setDepView('annuel',this)">Annuel</button>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <!-- Sélecteur compte -->
+      <div class="view-toggle" id="compteToggle">
+        <button class="view-btn active" onclick="setDepCompte('perso',this)">👤 Personnel</button>
+        <button class="view-btn" onclick="setDepCompte('commun',this)">👫 Commun</button>
+        <button class="view-btn" onclick="setDepCompte('global',this)">🌐 Global</button>
+      </div>
+      <!-- Sélecteur mensuel/annuel -->
+      <div class="view-toggle">
+        <button class="view-btn active" onclick="setDepView('mensuel',this)">Mensuel</button>
+        <button class="view-btn" onclick="setDepView('annuel',this)">Annuel</button>
+      </div>
     </div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-green" onclick="openTransModal('income')">+ Revenu</button>
       <button class="btn btn-red"   onclick="openTransModal('expense')">+ Dépense</button>
     </div>
   </div>
+
+  <!-- Bandeau compte actif -->
+  <div id="depCompteBadge" style="display:none;padding:8px 14px;border-radius:8px;margin-bottom:16px;font-size:12px;font-weight:600"></div>
+
   <!-- MENSUEL -->
   <div id="depMensuel">
     <div class="month-nav">
@@ -355,22 +370,79 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
       <div class="month-nav-title" id="monthTitle"></div>
       <button class="mnav-btn" onclick="shiftMonth(1)">›</button>
     </div>
-    <div class="kpi-grid4">
-      <div class="kpi"><div class="kpi-label">Revenus du mois</div><div class="kpi-value sm" id="mInc" style="color:var(--green)">0 €</div><div class="kpi-sub" id="mIncVs">—</div></div>
-      <div class="kpi"><div class="kpi-label">Dépenses du mois</div><div class="kpi-value sm" id="mExp" style="color:var(--red)">0 €</div><div class="kpi-sub" id="mExpVs">—</div></div>
-      <div class="kpi"><div class="kpi-label">Solde</div><div class="kpi-value sm" id="mSolde">0 €</div><div class="kpi-sub" id="mSoldeSub">—</div></div>
-      <div class="kpi"><div class="kpi-label">Taux d'épargne</div><div class="kpi-value sm" id="mRate" style="color:var(--blue)">0%</div><div class="kpi-sub">du revenu mensuel</div></div>
+
+    <!-- Vue Personnel / Commun : KPIs normaux -->
+    <div id="depSingleView">
+      <div class="kpi-grid4">
+        <div class="kpi"><div class="kpi-label">Revenus du mois</div><div class="kpi-value sm" id="mInc" style="color:var(--green)">0 €</div><div class="kpi-sub" id="mIncVs">—</div></div>
+        <div class="kpi"><div class="kpi-label">Dépenses du mois</div><div class="kpi-value sm" id="mExp" style="color:var(--red)">0 €</div><div class="kpi-sub" id="mExpVs">—</div></div>
+        <div class="kpi"><div class="kpi-label">Solde</div><div class="kpi-value sm" id="mSolde">0 €</div><div class="kpi-sub" id="mSoldeSub">—</div></div>
+        <div class="kpi"><div class="kpi-label">Taux d'épargne</div><div class="kpi-value sm" id="mRate" style="color:var(--blue)">0%</div><div class="kpi-sub">du revenu mensuel</div></div>
+      </div>
+      <div class="grid-2" style="margin-bottom:18px">
+        <div class="panel"><div class="panel-header"><span class="panel-title">Dépenses par catégorie</span></div><div class="panel-body" style="padding-top:12px"><div class="chart-wrap" style="height:180px"><canvas id="expDonut"></canvas><div class="donut-center"><div class="big" id="expCenter">0 €</div><div class="small">DÉPENSES</div></div></div><div class="legend" id="expLegend"></div></div></div>
+        <div class="panel"><div class="panel-header"><span class="panel-title">Revenus par catégorie</span></div><div class="panel-body" style="padding-top:12px"><div class="chart-wrap" style="height:180px"><canvas id="incDonut"></canvas><div class="donut-center"><div class="big" id="incCenter">0 €</div><div class="small">REVENUS</div></div></div><div class="legend" id="incLegend"></div></div></div>
+      </div>
+      <div class="panel" style="margin-bottom:18px">
+        <div class="panel-header"><span class="panel-title">Transactions du mois</span><span class="panel-badge" id="mTransBadge">0</span></div>
+        <div style="overflow-x:auto"><table class="budget-table"><thead><tr><th style="padding-left:20px">Description</th><th>Catégorie</th><th>Type</th><th>Compte</th><th>Date</th><th style="text-align:right">Montant</th><th style="text-align:right;padding-right:20px">Actions</th></tr></thead><tbody id="mTransBody"></tbody></table>
+        <div id="mTransEmpty" class="empty-state"><div class="big">⟳</div><div>Aucune transaction ce mois-ci</div></div></div>
+      </div>
     </div>
-    <div class="grid-2" style="margin-bottom:18px">
-      <div class="panel"><div class="panel-header"><span class="panel-title">Dépenses par catégorie</span></div><div class="panel-body" style="padding-top:12px"><div class="chart-wrap" style="height:180px"><canvas id="expDonut"></canvas><div class="donut-center"><div class="big" id="expCenter">0 €</div><div class="small">DÉPENSES</div></div></div><div class="legend" id="expLegend"></div></div></div>
-      <div class="panel"><div class="panel-header"><span class="panel-title">Revenus par catégorie</span></div><div class="panel-body" style="padding-top:12px"><div class="chart-wrap" style="height:180px"><canvas id="incDonut"></canvas><div class="donut-center"><div class="big" id="incCenter">0 €</div><div class="small">REVENUS</div></div></div><div class="legend" id="incLegend"></div></div></div>
-    </div>
-    <div class="panel" style="margin-bottom:18px">
-      <div class="panel-header"><span class="panel-title">Transactions du mois</span><span class="panel-badge" id="mTransBadge">0</span></div>
-      <div style="overflow-x:auto"><table class="budget-table"><thead><tr><th style="padding-left:20px">Description</th><th>Catégorie</th><th>Type</th><th>Date</th><th style="text-align:right">Montant</th><th style="text-align:right;padding-right:20px">Actions</th></tr></thead><tbody id="mTransBody"></tbody></table>
-      <div id="mTransEmpty" class="empty-state"><div class="big">⟳</div><div>Aucune transaction ce mois-ci</div></div></div>
+
+    <!-- Vue Global : comparaison côte-à-côte -->
+    <div id="depGlobalView" style="display:none">
+      <!-- KPIs globaux -->
+      <div class="kpi-grid4" style="margin-bottom:18px">
+        <div class="kpi"><div class="kpi-label">Total revenus</div><div class="kpi-value sm" id="gInc" style="color:var(--green)">0 €</div><div class="kpi-sub">tous comptes</div></div>
+        <div class="kpi"><div class="kpi-label">Total dépenses</div><div class="kpi-value sm" id="gExp" style="color:var(--red)">0 €</div><div class="kpi-sub">tous comptes</div></div>
+        <div class="kpi"><div class="kpi-label">Solde global</div><div class="kpi-value sm" id="gSolde">0 €</div><div class="kpi-sub" id="gSoldeSub">—</div></div>
+        <div class="kpi"><div class="kpi-label">Taux d'épargne global</div><div class="kpi-value sm" id="gRate" style="color:var(--blue)">0%</div><div class="kpi-sub">tous comptes</div></div>
+      </div>
+      <!-- Comparaison perso / commun -->
+      <div class="grid-2" style="margin-bottom:18px">
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">👤 Personnel</span><span class="panel-badge" id="gPersoSolde">—</span></div>
+          <div class="panel-body" style="padding:8px 0">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px 12px">
+              <div style="background:rgba(80,200,120,.07);border-radius:8px;padding:10px;text-align:center">
+                <div style="font-size:10px;color:var(--muted)">Revenus</div>
+                <div style="font-size:16px;font-weight:700;color:var(--green)" id="gPersoInc">0 €</div>
+              </div>
+              <div style="background:rgba(220,80,60,.07);border-radius:8px;padding:10px;text-align:center">
+                <div style="font-size:10px;color:var(--muted)">Dépenses</div>
+                <div style="font-size:16px;font-weight:700;color:var(--red)" id="gPersoExp">0 €</div>
+              </div>
+            </div>
+            <div id="gPersoTopDep" style="padding:0 16px"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">👫 Commun</span><span class="panel-badge" id="gCommunSolde">—</span></div>
+          <div class="panel-body" style="padding:8px 0">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px 12px">
+              <div style="background:rgba(80,200,120,.07);border-radius:8px;padding:10px;text-align:center">
+                <div style="font-size:10px;color:var(--muted)">Revenus</div>
+                <div style="font-size:16px;font-weight:700;color:var(--green)" id="gCommunInc">0 €</div>
+              </div>
+              <div style="background:rgba(220,80,60,.07);border-radius:8px;padding:10px;text-align:center">
+                <div style="font-size:10px;color:var(--muted)">Dépenses</div>
+                <div style="font-size:16px;font-weight:700;color:var(--red)" id="gCommunExp">0 €</div>
+              </div>
+            </div>
+            <div id="gCommunTopDep" style="padding:0 16px"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Toutes les transactions -->
+      <div class="panel" style="margin-bottom:18px">
+        <div class="panel-header"><span class="panel-title">Toutes les transactions</span><span class="panel-badge" id="gTransBadge">0</span></div>
+        <div style="overflow-x:auto"><table class="budget-table"><thead><tr><th style="padding-left:20px">Description</th><th>Catégorie</th><th>Type</th><th>Compte</th><th>Date</th><th style="text-align:right">Montant</th><th style="text-align:right;padding-right:20px">Actions</th></tr></thead><tbody id="gTransBody"></tbody></table>
+        <div id="gTransEmpty" class="empty-state"><div class="big">⟳</div><div>Aucune transaction ce mois-ci</div></div></div>
+      </div>
     </div>
   </div>
+
   <!-- ANNUEL -->
   <div id="depAnnuel" style="display:none">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap"><span style="font-size:10px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase">Année</span><div id="yearSelector" style="display:flex;gap:7px;flex-wrap:wrap"></div></div>
@@ -387,8 +459,10 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
     </div>
     <div class="panel" style="margin-bottom:18px"><div class="panel-header"><span class="panel-title">Récapitulatif mensuel</span></div><div style="overflow-x:auto"><table class="annual-table"><thead><tr><th>Mois</th><th>Revenus</th><th>Dépenses</th><th>Solde</th><th>Épargne</th></tr></thead><tbody id="annualBody"></tbody></table></div></div>
   </div>
+
 </div>
 </div>
+
 
 <!-- ══ PAGE CRÉDITS ══ -->
 <div class="page" id="page-credits">
@@ -929,6 +1003,12 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
     <div class="form-group"><label class="form-label">Date</label><input class="form-input" id="transDate" type="date"></div>
   </div>
   <div class="form-group"><label class="form-label">Catégorie</label><select class="form-select" id="transCat"></select></div>
+  <div class="form-group"><label class="form-label">Compte</label>
+    <div style="display:flex;gap:7px" id="transCompteWrap">
+      <button class="btn active" id="btnPerso" onclick="setTransCompte('perso')" style="flex:1;justify-content:center">👤 Personnel</button>
+      <button class="btn" id="btnCommun" onclick="setTransCompte('commun')" style="flex:1;justify-content:center">👫 Commun</button>
+    </div>
+  </div>
   <div class="form-group"><label class="form-label">Note</label><input class="form-input" id="transNote" placeholder="Détail..."></div>
   <div class="modal-footer">
     <button class="btn btn-ghost" onclick="closeTransModal()">Annuler</button>
@@ -1274,6 +1354,7 @@ function unlockApp() {
   updateSyncBanner();
   _patchCryptoPlatform();
   _patchPEAFields();
+  _patchTransCompte();
   _patchMissingMeta();
   buildSubNav();
   renderSubPage(currentSubPage);
@@ -1665,6 +1746,7 @@ let currentSubPage = 'global';
 let editAssetId = null, editTransId = null;
 let transType = 'income';
 let depView = 'mensuel';
+let depCompte = 'perso'; // 'perso' | 'commun' | 'global'
 let navY = NOW.getFullYear(), navM = NOW.getMonth();
 let selYear = NOW.getFullYear();
 
@@ -3715,6 +3797,31 @@ function saveLivretRates(){
 }
 
 // ── Dépenses & Revenus ────────────────────────────────
+function setDepCompte(c, btn) {
+  depCompte = c;
+  document.querySelectorAll('#compteToggle .view-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  const sv = document.getElementById('depSingleView');
+  const gv = document.getElementById('depGlobalView');
+  const badge = document.getElementById('depCompteBadge');
+  if (c === 'global') {
+    if (sv) sv.style.display = 'none';
+    if (gv) gv.style.display = 'block';
+    if (badge) badge.style.display = 'none';
+  } else {
+    if (sv) sv.style.display = 'block';
+    if (gv) gv.style.display = 'none';
+    if (badge) {
+      badge.style.display = 'block';
+      badge.style.background = c==='perso' ? 'rgba(80,140,220,.10)' : 'rgba(180,100,220,.10)';
+      badge.style.color = c==='perso' ? 'var(--blue)' : '#b464dc';
+      badge.style.border = '1px solid ' + (c==='perso' ? 'rgba(80,140,220,.25)' : 'rgba(180,100,220,.25)');
+      badge.textContent = c==='perso' ? '👤 Affichage : Compte Personnel' : '👫 Affichage : Compte Commun';
+    }
+  }
+  renderDep();
+}
+
 function setDepView(view,btn){
   depView=view;
   document.querySelectorAll('.view-btn').forEach(b=>b.classList.remove('active'));
@@ -3736,9 +3843,22 @@ function openTransModal(type){
   ['transDesc','transAmount','transNote'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const dt=document.getElementById('transDate');if(dt)dt.value=new Date().toISOString().slice(0,10);
   _buildTransCats(type);setTransType(type);
+  setTransCompte(depCompte==='global'?'perso':depCompte);
   document.getElementById('transModal').classList.add('open');
 }
 function closeTransModal(){document.getElementById('transModal').classList.remove('open');editTransId=null;}
+function setTransCompte(c) {
+  const bp = document.getElementById('btnPerso');
+  const bc = document.getElementById('btnCommun');
+  if (!bp || !bc) return;
+  bp.classList.toggle('active', c==='perso');
+  bc.classList.toggle('active', c==='commun');
+  bp.style.background = c==='perso' ? 'rgba(80,140,220,.18)' : '';
+  bc.style.background = c==='commun' ? 'rgba(180,100,220,.18)' : '';
+  const wrap = document.getElementById('transCompteWrap');
+  if (wrap) wrap.dataset.compte = c;
+}
+
 function setTransType(type){
   transType=type;
   const bI=document.getElementById('btnIncome'),bE=document.getElementById('btnExpense');
@@ -3755,9 +3875,12 @@ function saveTrans(){
   const amount=parseFloat(document.getElementById('transAmount').value)||0;
   const date=document.getElementById('transDate').value;
   if(!desc||!amount||!date){toast('⚠ Description, montant et date requis');return;}
+  const _wrap=document.getElementById('transCompteWrap');
+  const _compte=(_wrap&&_wrap.dataset.compte)||depCompte||'perso';
   const t={id:editTransId||'tr_'+Date.now(),type:transType,desc,amount,date,
     cat:document.getElementById('transCat').value,
-    note:document.getElementById('transNote').value.trim()};
+    note:document.getElementById('transNote').value.trim(),
+    compte:_compte};
   if(editTransId){const i=transactions.findIndex(x=>x.id===editTransId);if(i>=0)transactions[i]=t;}
   else transactions.push(t);
   localStorage.setItem('pat3_trans',JSON.stringify(transactions));
@@ -3777,6 +3900,7 @@ function _editTrans(id){
   document.getElementById('transDate').value=t.date||'';
   document.getElementById('transNote').value=t.note||'';
   _buildTransCats(t.type);setTransType(t.type);
+  setTransCompte(t.compte||'perso');
   const sel=document.getElementById('transCat');if(sel)sel.value=t.cat||'';
   document.getElementById('transModal').classList.add('open');
 }
@@ -3787,9 +3911,23 @@ function _renderMensuel(){
   const MONTHS=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
   const titleEl=document.getElementById('monthTitle');
   if(titleEl)titleEl.innerHTML=`${MONTHS[navM]} <span>${navY}</span>`;
-  const mT=transactions.filter(t=>{const d=new Date(t.date);return d.getFullYear()===navY&&d.getMonth()===navM;});
+
+  // Filter by depCompte
+  const _filterCompte = t => {
+    if (depCompte === 'global') return true;
+    if (depCompte === 'perso')  return !t.compte || t.compte === 'perso';
+    if (depCompte === 'commun') return t.compte === 'commun';
+    return true;
+  };
+
+  if (depCompte === 'global') {
+    _renderMensuelGlobal();
+    return;
+  }
+
+  const mT=transactions.filter(t=>{const d=new Date(t.date);return d.getFullYear()===navY&&d.getMonth()===navM&&_filterCompte(t);});
   const pm=navM===0?11:navM-1,py=navM===0?navY-1:navY;
-  const pT=transactions.filter(t=>{const d=new Date(t.date);return d.getFullYear()===py&&d.getMonth()===pm;});
+  const pT=transactions.filter(t=>{const d=new Date(t.date);return d.getFullYear()===py&&d.getMonth()===pm&&_filterCompte(t);});
   const inc=mT.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
   const exp=mT.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
   const pInc=pT.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
@@ -3813,10 +3951,12 @@ function _renderMensuel(){
       body.innerHTML=[...mT].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(t=>{
         const cats=t.type==='income'?IC:EC;
         const cd=cats.find(c=>c.id===t.cat)||cats[cats.length-1];
+        const compteLabel=t.compte==='commun'?'<span style="font-size:10px;color:#b464dc">👫</span>':'<span style="font-size:10px;color:var(--blue)">👤</span>';
         return`<tr class="budget-row">
           <td style="padding-left:20px">${esc(t.desc)}</td>
           <td><span style="font-size:11px">${cd.icon} ${cd.label}</span></td>
           <td><span class="type-badge ${t.type==='income'?'income':'expense'}">${t.type==='income'?'Revenu':'Dépense'}</span></td>
+          <td>${compteLabel}</td>
           <td style="color:var(--muted)">${fmtDate(t.date)}</td>
           <td style="text-align:right;font-weight:500;color:${t.type==='income'?'var(--green)':'var(--red)'}">${t.type==='income'?'+':'−'}${fmt(t.amount)}</td>
           <td style="text-align:right;padding-right:20px">
@@ -3827,6 +3967,85 @@ function _renderMensuel(){
     }
   }
 }
+
+function _renderMensuelGlobal(){
+  const allM  = transactions.filter(t=>{const d=new Date(t.date);return d.getFullYear()===navY&&d.getMonth()===navM;});
+  const persoM = allM.filter(t=>!t.compte||t.compte==='perso');
+  const communM= allM.filter(t=>t.compte==='commun');
+
+  const _sum=(list,type)=>list.filter(t=>t.type===type).reduce((s,t)=>s+t.amount,0);
+  const gInc=_sum(allM,'income'), gExp=_sum(allM,'expense'), gSolde=gInc-gExp;
+  const pInc=_sum(persoM,'income'),pExp=_sum(persoM,'expense'),pSolde=pInc-pExp;
+  const cInc=_sum(communM,'income'),cExp=_sum(communM,'expense'),cSolde=cInc-cExp;
+  const gRate=gInc>0?(gInc-gExp)/gInc*100:0;
+
+  const _s=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  _s('gInc',fmt(gInc));_s('gExp',fmt(gExp));_s('gRate',gRate.toFixed(0)+'%');
+  const gs=document.getElementById('gSolde');if(gs){gs.textContent=fmt(gSolde);gs.style.color=gSolde>=0?'var(--green)':'var(--red)';}
+  const gss=document.getElementById('gSoldeSub');if(gss)gss.textContent=gInc>0?gRate.toFixed(0)+'% d\'épargne':'—';
+
+  // Perso panel
+  _s('gPersoInc',fmt(pInc));_s('gPersoExp',fmt(pExp));
+  const gpb=document.getElementById('gPersoSolde');
+  if(gpb){gpb.textContent=(pSolde>=0?'+':'')+fmt(pSolde);gpb.style.color=pSolde>=0?'var(--green)':'var(--red)';}
+  // Commun panel
+  _s('gCommunInc',fmt(cInc));_s('gCommunExp',fmt(cExp));
+  const gcb=document.getElementById('gCommunSolde');
+  if(gcb){gcb.textContent=(cSolde>=0?'+':'')+fmt(cSolde);gcb.style.color=cSolde>=0?'var(--green)':'var(--red)';}
+
+  // Top dépenses par compte
+  const _topDep=(list,containerId)=>{
+    const el=document.getElementById(containerId);if(!el)return;
+    const exps=list.filter(t=>t.type==='expense');
+    if(!exps.length){el.innerHTML='<div style="color:var(--muted);font-size:11px;padding-bottom:8px">Aucune dépense</div>';return;}
+    const byCat={};exps.forEach(t=>{byCat[t.cat]=(byCat[t.cat]||0)+t.amount;});
+    const sorted=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,4);
+    const total=exps.reduce((s,t)=>s+t.amount,0);
+    el.innerHTML=sorted.map(([catId,v])=>{
+      const cd=EC.find(c=>c.id===catId)||EC[EC.length-1];
+      const pct=total>0?v/total*100:0;
+      return`<div style="margin-bottom:7px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px">
+          <span>${cd.icon} ${cd.label}</span><span style="color:var(--red)">${fmt(v)} <span style="opacity:.5">${pct.toFixed(0)}%</span></span>
+        </div>
+        <div style="height:3px;background:var(--border);border-radius:2px">
+          <div style="height:100%;width:${pct}%;background:${cd.color||'var(--red)'};border-radius:2px"></div>
+        </div></div>`;
+    }).join('');
+  };
+  _topDep(persoM,'gPersoTopDep');
+  _topDep(communM,'gCommunTopDep');
+
+  // All transactions table
+  const badge=document.getElementById('gTransBadge');if(badge)badge.textContent=allM.length;
+  const body=document.getElementById('gTransBody'),empty=document.getElementById('gTransEmpty');
+  if(body){
+    if(!allM.length){body.innerHTML='';if(empty)empty.style.display='';}
+    else{
+      if(empty)empty.style.display='none';
+      body.innerHTML=[...allM].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(t=>{
+        const cats=t.type==='income'?IC:EC;
+        const cd=cats.find(c=>c.id===t.cat)||cats[cats.length-1];
+        const compteLabel=t.compte==='commun'
+          ?'<span style="font-size:11px;color:#b464dc;font-weight:600">👫 Commun</span>'
+          :'<span style="font-size:11px;color:var(--blue)">👤 Perso</span>';
+        return`<tr class="budget-row">
+          <td style="padding-left:20px">${esc(t.desc)}</td>
+          <td><span style="font-size:11px">${cd.icon} ${cd.label}</span></td>
+          <td><span class="type-badge ${t.type==='income'?'income':'expense'}">${t.type==='income'?'Revenu':'Dépense'}</span></td>
+          <td>${compteLabel}</td>
+          <td style="color:var(--muted)">${fmtDate(t.date)}</td>
+          <td style="text-align:right;font-weight:500;color:${t.type==='income'?'var(--green)':'var(--red)'}">${t.type==='income'?'+':'−'}${fmt(t.amount)}</td>
+          <td style="text-align:right;padding-right:20px">
+            <button class="action-btn" onclick="_editTrans('${t.id}')">✎</button>
+            <button class="action-btn danger" onclick="_deleteTrans('${t.id}')">✕</button>
+          </td></tr>`;
+      }).join('');
+    }
+  }
+}
+
+
 function _updateMiniDonut(canvasId,centerId,legendId,list,catDefs){
   const total=list.reduce((s,t)=>s+t.amount,0);
   const byCat={};list.forEach(t=>{byCat[t.cat]=(byCat[t.cat]||0)+t.amount;});
@@ -3854,6 +4073,7 @@ function _renderAnnuel(){
   if(!years.includes(selYear))selYear=years[0];
   const ys=document.getElementById('yearSelector');
   if(ys)ys.innerHTML=years.map(y=>`<button class="year-btn${y===selYear?' active':''}" onclick="selYear=${y};_renderAnnuel()">${y}</button>`).join('');
+  const _filterCompteA=t=>depCompte==='global'?true:depCompte==='commun'?t.compte==='commun':(!t.compte||t.compte==='perso');
   const yT=transactions.filter(t=>new Date(t.date).getFullYear()===selYear);
   const inc=yT.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
   const exp=yT.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
@@ -4085,6 +4305,15 @@ function _renderStructRow(s) {
 }
 
 // ── Patch meta on already-imported assets (run once on unlock) ──────────────
+function _patchTransCompte() {
+  // Migrate existing transactions: add compte='perso' if missing
+  var changed = false;
+  transactions.forEach(function(t) {
+    if (!t.compte) { t.compte = 'perso'; changed = true; }
+  });
+  if (changed) { localStorage.setItem('pat3_trans', JSON.stringify(transactions)); }
+}
+
 function _patchCryptoPlatform() {
   // Ensure all cryptos have cryptoPlatform = 'Binance' (rename Coinbase → Binance)
   var changed = false;
