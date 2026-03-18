@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2026-03-17-2415 -->
+<!-- v2026-03-17-2430 -->
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -480,8 +480,8 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
     <div id="depGlobalView" style="display:none">
       <!-- KPIs globaux -->
       <div class="kpi-grid4" style="margin-bottom:18px">
-        <div class="kpi"><div class="kpi-label">Total revenus</div><div class="kpi-value sm" id="gInc" style="color:var(--green)">0 €</div><div class="kpi-sub">hors virements internes</div></div>
-        <div class="kpi"><div class="kpi-label">Total dépenses</div><div class="kpi-value sm" id="gExp" style="color:var(--red)">0 €</div><div class="kpi-sub">hors virements internes</div></div>
+        <div class="kpi"><div class="kpi-label">Total revenus</div><div class="kpi-value sm" id="gInc" style="color:var(--green)">0 €</div><div class="kpi-sub">revenus perso uniquement</div></div>
+        <div class="kpi"><div class="kpi-label">Total dépenses</div><div class="kpi-value sm" id="gExp" style="color:var(--red)">0 €</div><div class="kpi-sub">perso + commun combinés</div></div>
         <div class="kpi"><div class="kpi-label">Solde global</div><div class="kpi-value sm" id="gSolde">0 €</div><div class="kpi-sub" id="gSoldeSub">—</div></div>
         <div class="kpi"><div class="kpi-label">Virements internes</div><div class="kpi-value sm" id="gTransferTotal" style="color:var(--blue)">0 €</div><div class="kpi-sub" id="gTransferSub">ce mois-ci</div></div>
       </div>
@@ -514,20 +514,20 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
           </div>
         </div>
         <div class="panel">
-          <div class="panel-header"><span class="panel-title">👫 Commun</span><span class="panel-badge" id="gCommunSolde">—</span></div>
+          <div class="panel-header"><span class="panel-title">👫 Pot commun</span><span class="panel-badge" id="gCommunSolde">—</span></div>
           <div class="panel-body" style="padding:8px 0">
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:0 16px 12px">
-              <div style="background:rgba(80,200,120,.07);border-radius:8px;padding:10px;text-align:center">
-                <div style="font-size:10px;color:var(--muted)">Revenus ext.</div>
-                <div style="font-size:15px;font-weight:700;color:var(--green)" id="gCommunInc">0 €</div>
-              </div>
-              <div style="background:rgba(220,80,60,.07);border-radius:8px;padding:10px;text-align:center">
-                <div style="font-size:10px;color:var(--muted)">Dépenses</div>
-                <div style="font-size:15px;font-weight:700;color:var(--red)" id="gCommunExp">0 €</div>
-              </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:0 16px 8px">
               <div style="background:rgba(92,141,224,.07);border-radius:8px;padding:10px;text-align:center">
                 <div style="font-size:10px;color:var(--muted)">← Virements reçus</div>
                 <div style="font-size:15px;font-weight:700;color:var(--blue)" id="gCommunTransferIn">0 €</div>
+              </div>
+              <div style="background:rgba(220,80,60,.07);border-radius:8px;padding:10px;text-align:center">
+                <div style="font-size:10px;color:var(--muted)">Dépenses communes</div>
+                <div style="font-size:15px;font-weight:700;color:var(--red)" id="gCommunExp">0 €</div>
+              </div>
+              <div style="background:rgba(76,175,130,.07);border-radius:8px;padding:10px;text-align:center">
+                <div style="font-size:10px;color:var(--muted)">Solde pot commun</div>
+                <div style="font-size:15px;font-weight:700" id="gCommunBalance" style="color:var(--green)">0 €</div>
               </div>
             </div>
             <div id="gCommunTopDep" style="padding:0 16px"></div>
@@ -4634,6 +4634,13 @@ function _renderMensuel(){
     return;
   }
 
+  // ── Vue COMMUN spéciale ─────────────────────────────────────────
+  if (depCompte === 'commun') {
+    _renderMensuelCommun(_filterCompte);
+    return;
+  }
+
+  // ── Vue PERSO standard ─────────────────────────────────────────
   const mT=transactions.filter(t=>{const d=new Date(t.date);return d.getFullYear()===navY&&d.getMonth()===navM&&_filterCompte(t);});
   const pm=navM===0?11:navM-1,py=navM===0?navY-1:navY;
   const pT=transactions.filter(t=>{const d=new Date(t.date);return d.getFullYear()===py&&d.getMonth()===pm&&_filterCompte(t);});
@@ -4650,6 +4657,17 @@ function _renderMensuel(){
   const mIV=document.getElementById('mIncVs');if(mIV)mIV.innerHTML=_vs(inc,pInc);
   const mEV=document.getElementById('mExpVs');if(mEV)mEV.innerHTML=_vs(exp,pExp);
   const mSS=document.getElementById('mSoldeSub');if(mSS)mSS.innerHTML=_vs(solde,pInc-pExp);
+
+  // Hide/show KPI labels for perso context
+  const kpiLabel1 = document.querySelector('#depSingleView .kpi:first-child .kpi-label');
+  if(kpiLabel1) kpiLabel1.textContent = 'Revenus du mois';
+  const kpiLabel4 = document.querySelector('#depSingleView .kpi:last-child .kpi-label');
+  if(kpiLabel4) kpiLabel4.textContent = "Taux d'épargne";
+  const kpi4 = document.querySelector('#depSingleView .kpi:last-child .kpi-value');
+  if(kpi4) { kpi4.textContent = rate.toFixed(0)+'%'; kpi4.style.color='var(--blue)'; }
+  const kpi4sub = document.querySelector('#depSingleView .kpi:last-child .kpi-sub');
+  if(kpi4sub) kpi4sub.textContent = 'du revenu mensuel';
+
   _updateMiniDonut('expDonut','expCenter','expLegend',mT.filter(t=>t.type==='expense'),EC);
   _updateMiniDonut('incDonut','incCenter','incLegend',mT.filter(t=>t.type==='income'),IC);
   const badge=document.getElementById('mTransBadge');if(badge)badge.textContent=mT.length;
@@ -4683,6 +4701,163 @@ function _renderMensuel(){
       // Hook search/filter after render
       _buildCatFilter(mT);
       _patchTransRows(mT);
+    }
+  }
+}
+
+// ── Vue COMMUN : pot commun familial (dépenses uniquement, alimenté par virements) ──
+function _renderMensuelCommun(_filterCompte) {
+  const MONTHS=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  const _s = (id,v) => { const e=document.getElementById(id); if(e) e.textContent=v; };
+
+  // All commun transactions this month
+  const mT = transactions.filter(t => {
+    const d = new Date(t.date);
+    return d.getFullYear()===navY && d.getMonth()===navM && t.compte==='commun';
+  });
+  const pm=navM===0?11:navM-1, py=navM===0?navY-1:navY;
+  const pT = transactions.filter(t => {
+    const d = new Date(t.date);
+    return d.getFullYear()===py && d.getMonth()===pm && t.compte==='commun';
+  });
+
+  const exp        = mT.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+  const pExp       = pT.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+  const transferIn = mT.filter(t=>t.type==='transfer'&&t.transferDir==='in').reduce((s,t)=>s+t.amount,0);
+  const pTransIn   = pT.filter(t=>t.type==='transfer'&&t.transferDir==='in').reduce((s,t)=>s+t.amount,0);
+  const balance    = transferIn - exp; // pot commun : reçu - dépensé
+  const coverage   = transferIn > 0 ? Math.min(100, exp/transferIn*100) : 0;
+
+  // Adapt KPI strip for commun context
+  _s('mInc', fmt(transferIn));
+  _s('mExp', fmt(exp));
+  const mS=document.getElementById('mSolde');
+  if(mS){ mS.textContent=fmt(balance); mS.style.color=balance>=0?'var(--green)':'var(--red)'; }
+
+  // Repurpose 4th KPI: budget coverage %
+  const kpi4v = document.querySelector('#depSingleView .kpi:last-child .kpi-value');
+  if(kpi4v){ kpi4v.textContent=coverage.toFixed(0)+'%'; kpi4v.style.color=coverage<=80?'var(--green)':coverage<=100?'var(--gold)':'var(--red)'; }
+  const kpi4l = document.querySelector('#depSingleView .kpi:first-child .kpi-label');
+  if(kpi4l) kpi4l.textContent = '← Virements reçus';
+  const kpi4lb = document.querySelector('#depSingleView .kpi:last-child .kpi-label');
+  if(kpi4lb) kpi4lb.textContent = 'Budget utilisé';
+  const kpi4sub = document.querySelector('#depSingleView .kpi:last-child .kpi-sub');
+  if(kpi4sub) kpi4sub.textContent = coverage<=100 ? 'des virements couverts' : '⚠ dépenses > virements';
+  const kpi4vs = document.querySelector('#depSingleView .kpi:first-child .kpi-sub');
+  if(kpi4vs) {
+    const diff = transferIn - pTransIn;
+    kpi4vs.innerHTML = pTransIn ? `<span class="${diff>=0?'up':'down'}">${diff>=0?'↑':'↓'} ${fmt(Math.abs(diff))} vs mois préc.</span>` : '—';
+  }
+  const mIV=document.getElementById('mIncVs'); // hide income vs — already handled above
+  if(mIV) mIV.innerHTML='';
+  const mEV=document.getElementById('mExpVs');
+  if(mEV) { const d=exp-pExp,pc=pExp>0?d/pExp*100:0; mEV.innerHTML=pExp?`<span class="${d>=0?'down':'up'}">${d>=0?'↑':'↓'} ${fmt(Math.abs(d))} (${pc>=0?'+':''}${pc.toFixed(0)}%)</span>`:'—'; }
+  const mSS=document.getElementById('mSoldeSub');
+  if(mSS) mSS.innerHTML=balance>=0?`<span class="up">✓ Excédent de ${fmt(balance)}</span>`:`<span class="down">⚠ Déficit de ${fmt(Math.abs(balance))}</span>`;
+
+  // Inject commun info banner into kpi strip
+  const depSV = document.getElementById('depSingleView');
+  let infoBanner = document.getElementById('communInfoBanner');
+  if(!infoBanner && depSV) {
+    infoBanner = document.createElement('div');
+    infoBanner.id = 'communInfoBanner';
+    infoBanner.style.cssText = 'padding:10px 16px;margin-bottom:16px;background:rgba(92,141,224,.07);border:1px solid rgba(92,141,224,.2);border-radius:8px;font-size:11px;color:var(--muted);line-height:1.7;display:flex;gap:12px;align-items:center;flex-wrap:wrap';
+    depSV.insertBefore(infoBanner, depSV.children[1]);
+  }
+  if(infoBanner) {
+    const virNb = mT.filter(t=>t.type==='transfer'&&t.transferDir==='in').length;
+    infoBanner.innerHTML = `<span style="font-size:20px">👫</span>
+      <div>
+        <b style="color:var(--text)">Pot commun familial</b> — compte de dépenses partagées, alimenté par ${virNb} virement${virNb>1?'s':''} ce mois.
+        <br>Les revenus ne sont pas comptabilisés ici · Solde = virements reçus − dépenses communes.
+      </div>`;
+  }
+
+  // Bar showing budget usage
+  const barHTML = `<div style="margin-bottom:18px;padding:14px 18px;background:var(--surface);border:1px solid var(--border);border-radius:12px">
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:8px">
+      <span>Dépenses communes <b style="color:var(--red)">${fmt(exp)}</b></span>
+      <span>Budget (virements) <b style="color:var(--blue)">${fmt(transferIn)}</b></span>
+    </div>
+    <div style="height:10px;background:var(--surface2);border-radius:5px;overflow:hidden">
+      <div style="height:100%;width:${Math.min(100,coverage).toFixed(1)}%;background:${coverage<=80?'var(--green)':coverage<=100?'var(--gold)':'var(--red)'};border-radius:5px;transition:width .6s ease"></div>
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-top:6px;text-align:center">${coverage.toFixed(0)}% du budget utilisé ${balance>=0?'· '+fmt(balance)+' restants':'· dépassement de '+fmt(Math.abs(balance))}</div>
+  </div>`;
+
+  // Insert budget bar after the kpi-grid4
+  let budgetBar = document.getElementById('communBudgetBar');
+  if(!budgetBar && depSV) {
+    budgetBar = document.createElement('div');
+    budgetBar.id = 'communBudgetBar';
+    depSV.insertBefore(budgetBar, depSV.children[2]);
+  }
+  if(budgetBar) budgetBar.innerHTML = barHTML;
+
+  // Only show expense donut, repurpose income donut as "Virements reçus par source" 
+  _updateMiniDonut('expDonut','expCenter','expLegend',mT.filter(t=>t.type==='expense'),EC);
+
+  // Replace income donut with transfer breakdown
+  const incPanel = document.querySelector('#depSingleView .grid-2 .panel:last-child .panel-header .panel-title');
+  if(incPanel) incPanel.textContent = 'Virements reçus par source';
+  const incLegendEl = document.getElementById('incLegend');
+  const incCenterEl = document.getElementById('incCenter');
+  if(incCenterEl) incCenterEl.textContent = fmt(transferIn);
+  const inTrans = mT.filter(t=>t.type==='transfer'&&t.transferDir==='in');
+  if(incLegendEl) {
+    if(!inTrans.length) {
+      incLegendEl.innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:8px 0">Aucun virement reçu ce mois</div>';
+      // Clear the donut
+      if(incDonutC) { incDonutC.data.labels=[]; incDonutC.data.datasets[0].data=[]; incDonutC.update('none'); }
+    } else {
+      // Group by description
+      const byDesc = {};
+      inTrans.forEach(t => { byDesc[t.desc]=(byDesc[t.desc]||0)+t.amount; });
+      const cols = ['#5c8de0','#9b6be0','#3cb8c9','#c9a84c'];
+      const entries = Object.entries(byDesc);
+      if(incDonutC) {
+        incDonutC.data.labels = entries.map(e=>e[0]);
+        incDonutC.data.datasets[0].data = entries.map(e=>e[1]);
+        incDonutC.data.datasets[0].backgroundColor = entries.map((_,i)=>cols[i%cols.length]);
+        incDonutC.update('none');
+      }
+      incLegendEl.innerHTML = entries.map(([desc,val],i)=>`
+        <div class="legend-item">
+          <div class="legend-left"><div class="legend-dot" style="background:${cols[i%cols.length]}"></div><span class="legend-name">${esc(desc)}</span></div>
+          <div class="legend-right"><span class="legend-val">${fmt(val)}</span><span class="legend-pct">${transferIn>0?(val/transferIn*100).toFixed(0):'0'}%</span></div>
+        </div>`).join('');
+    }
+  }
+
+  // Transaction table (all commun transactions)
+  const badge=document.getElementById('mTransBadge'); if(badge) badge.textContent=mT.length;
+  const body=document.getElementById('mTransBody'), empty=document.getElementById('mTransEmpty');
+  if(body){
+    if(!mT.length){ body.innerHTML=''; if(empty) empty.style.display=''; }
+    else {
+      if(empty) empty.style.display='none';
+      body.innerHTML=[...mT].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(t=>{
+        const isTransfer=t.type==='transfer';
+        const cats=t.type==='income'?IC:EC;
+        const cd=isTransfer?{icon:'↔',label:'Virement'}:(cats.find(c=>c.id===t.cat)||cats[cats.length-1]);
+        const typeBadge=isTransfer
+          ?`<span class="type-badge transfer">${t.transferDir==='in'?'↤ Virement reçu':'↦ Virement sortant'}</span>`
+          :`<span class="type-badge ${t.type}">${t.type==='income'?'Revenu':'Dépense'}</span>`;
+        const amountColor=isTransfer?(t.transferDir==='in'?'var(--blue)':'var(--muted)'):(t.type==='income'?'var(--green)':'var(--red)');
+        const amountSign=isTransfer?(t.transferDir==='in'?'← ':'→ '):(t.type==='income'?'+':'−');
+        return`<tr class="budget-row" data-type="${t.type}" data-cat="${t.cat||''}">
+          <td style="padding-left:20px">${esc(t.desc)}</td>
+          <td><span style="font-size:11px">${cd.icon} ${cd.label}</span></td>
+          <td>${typeBadge}</td>
+          <td><span style="font-size:10px;color:#b464dc">👫</span></td>
+          <td style="color:var(--muted)">${fmtDate(t.date)}</td>
+          <td style="text-align:right;font-weight:500;color:${amountColor}">${amountSign}${fmt(t.amount)}</td>
+          <td style="text-align:right;padding-right:20px">
+            <button class="action-btn" onclick="_editTrans('${t.id}')">✎</button>
+            <button class="action-btn danger" onclick="_deleteTrans('${t.id}')" title="${isTransfer?'Supprimer les 2 entrées':''}">✕</button>
+          </td></tr>`;
+      }).join('');
+      _buildCatFilter(mT); _patchTransRows(mT);
     }
   }
 }
@@ -4724,11 +4899,17 @@ function _renderMensuelGlobal(){
   const gpb=document.getElementById('gPersoSolde');
   if(gpb){gpb.textContent=(pSolde>=0?'+':'')+fmt(pSolde);gpb.style.color=pSolde>=0?'var(--green)':'var(--red)';}
 
-  // Commun panel — transfer in
+  // Commun panel — pot commun balance
   const cTransIn = communM.filter(t=>t.type==='transfer'&&t.transferDir==='in').reduce((s,t)=>s+t.amount,0);
-  _s('gCommunInc',fmt(cInc)); _s('gCommunExp',fmt(cExp)); _s('gCommunTransferIn',fmt(cTransIn));
+  const cBalance = cTransIn - cExp;
+  _s('gCommunExp',fmt(cExp)); _s('gCommunTransferIn',fmt(cTransIn));
+  const gcBal = document.getElementById('gCommunBalance');
+  if(gcBal){ gcBal.textContent=(cBalance>=0?'+':'')+fmt(cBalance); gcBal.style.color=cBalance>=0?'var(--green)':'var(--red)'; }
   const gcb=document.getElementById('gCommunSolde');
-  if(gcb){gcb.textContent=(cSolde>=0?'+':'')+fmt(cSolde);gcb.style.color=cSolde>=0?'var(--green)':'var(--red)';}
+  if(gcb){
+    gcb.textContent = cTransIn>0 ? Math.min(100,Math.round(cExp/cTransIn*100))+'% utilisé' : '—';
+    gcb.style.color = cTransIn>0&&cExp<=cTransIn?'var(--green)':'var(--red)';
+  }
 
   // Top dépenses par compte (exclude transfers)
   const _topDep=(list,containerId)=>{
