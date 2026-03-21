@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2026-03-19-0830 -->
+<!-- v2026-03-19-1000 -->
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -242,9 +242,120 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
 .settings-section:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0;}
 
 @media(max-width:1100px){.kpi-strip,.kpi-grid4{grid-template-columns:1fr 1fr}.grid-3{grid-template-columns:1fr 1fr}}
-@media(max-width:768px){.page-inner,.main-nav,.sub-nav,header{padding-left:14px;padding-right:14px}.kpi-strip,.kpi-grid4,.kpi-grid3{grid-template-columns:1fr 1fr}.grid-2,.grid-3{grid-template-columns:1fr}.form-row,.form-row3{grid-template-columns:1fr}}
 
-/* ── SEARCH & FILTER BAR ── */
+/* ── MOBILE (≤768px) ─────────────────────────────────────────── */
+@media(max-width:768px){
+  /* Layout */
+  .page-inner{padding:14px 12px;}
+  .main-nav,.sub-nav,header{padding-left:12px;padding-right:12px;}
+  header{height:50px;gap:8px;}
+  .logo{font-size:16px;}
+  .header-date{display:none;}
+  #versionBadge{display:none;}
+
+  /* Grids */
+  .kpi-strip{grid-template-columns:1fr;}
+  .kpi-grid4,.kpi-grid3{grid-template-columns:1fr 1fr;}
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .form-row,.form-row3{grid-template-columns:1fr;}
+
+  /* KPIs */
+  .kpi{padding:14px 16px;}
+  .kpi-hero .kpi-value{font-size:30px;}
+  .kpi-value{font-size:26px;}
+
+  /* Sub nav — horizontal scroll on mobile */
+  .sub-nav{top:90px;gap:0;-webkit-overflow-scrolling:touch;}
+  .sub-tab{padding:8px 12px;font-size:9px;}
+
+  /* Main nav — shrink tabs */
+  .main-nav{top:50px;}
+  .main-tab{padding:10px 12px;font-size:10px;}
+
+  /* Panels */
+  .panel-header{padding:12px 14px;flex-wrap:wrap;gap:8px;}
+  .panel-body{padding:14px;}
+
+  /* Tables → mobile card list */
+  .budget-table thead{display:none;}
+  .budget-table,.budget-table tbody,.budget-row,.budget-table td{display:block;width:100%;}
+  .budget-row{position:relative;padding:10px 14px;border-bottom:1px solid var(--border);}
+  .budget-row td{padding:1px 0;border:none;}
+  .budget-row td:nth-child(1){font-size:13px;font-weight:600;color:var(--text);padding-bottom:3px;}
+  .budget-row td:nth-child(2){font-size:11px;color:var(--muted);}
+  .budget-row td:nth-child(3){display:inline-block;}
+  .budget-row td:nth-child(4){display:inline-block;margin-left:6px;}
+  .budget-row td:nth-child(5){font-size:10px;color:var(--muted);display:inline-block;margin-left:6px;}
+  .budget-row td:nth-child(6){position:absolute;top:10px;right:60px;font-size:14px;font-weight:700;}
+  .budget-row td:nth-child(7){position:absolute;top:8px;right:8px;}
+
+  /* Data tables (actifs) */
+  .data-table thead{display:none;}
+  .data-table,.data-table tbody{display:block;}
+  .data-row{display:flex;flex-direction:column;padding:12px 14px;gap:3px;border-bottom:1px solid var(--border);}
+  .data-row td{display:block;padding:0;border:none;}
+  .data-row td:last-child{text-align:left;}
+
+  /* Calendar */
+  .cal-day{min-height:48px;padding:3px;}
+  .cal-day-name{font-size:8px;}
+  .cal-evt{font-size:8px;}
+
+  /* Modal */
+  .modal{padding:20px 16px;width:calc(100vw - 24px);margin:0 12px;}
+  .modal-overlay{padding:12px 0;align-items:flex-end;}
+  .modal{border-radius:16px 16px 0 0;}
+
+  /* Buttons — larger touch targets */
+  .btn{padding:9px 14px;font-size:11px;}
+  .action-btn{padding:5px 10px;font-size:11px;}
+  .mnav-btn{width:36px;height:36px;font-size:18px;}
+
+  /* Month nav */
+  .month-nav{gap:8px;}
+  .month-nav-title{font-size:20px;}
+
+  /* Search bar */
+  .search-filter-bar{gap:6px;}
+  .search-input-wrap{min-width:140px;}
+  .filter-chip{font-size:9px;padding:3px 8px;}
+
+  /* Header buttons — hide text labels on mobile */
+  .header-actions .btn-ghost span{display:none;}
+}
+
+/* ── EXTRA SMALL (≤480px) ────────────────────────────────────── */
+@media(max-width:480px){
+  .kpi-grid4,.kpi-grid3{grid-template-columns:1fr;}
+  .view-toggle{flex-wrap:wrap;}
+  .view-btn{font-size:10px;padding:5px 10px;}
+  .kpi-strip .kpi:not(.kpi-hero){display:none;}/* show only hero on tiny screens */
+  .kpi-strip .kpi:first-child,.kpi-strip .kpi:nth-child(2){display:block;}
+}
+
+/* ── MOBILE BOTTOM NAV ──────────────────────────────────────────── */
+.mobile-bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:300;
+  background:rgba(12,13,15,.97);backdrop-filter:blur(12px);
+  border-top:1px solid var(--border);
+  display:none;grid-template-columns:repeat(4,1fr);
+  padding-bottom:env(safe-area-inset-bottom,0px);}
+.mob-tab{background:none;border:none;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;padding:8px 4px;cursor:pointer;gap:3px;font-family:'DM Mono',monospace;
+  transition:opacity .15s;}
+.mob-tab:hover{opacity:.8;}
+.mob-tab.active .mob-icon,.mob-tab.active .mob-label{color:var(--gold);}
+.mob-icon{font-size:18px;color:var(--muted);}
+.mob-label{font-size:9px;color:var(--muted);letter-spacing:.05em;text-transform:uppercase;}
+@media(max-width:768px){
+  .mobile-bottom-nav{display:grid;}
+  /* Push page content above bottom nav */
+  body{padding-bottom:64px;}
+  /* Hide the top main-nav on mobile */
+  .main-nav{display:none;}
+  /* Adjust sticky positions for mobile (no main-nav) */
+  .sub-nav{top:50px;}
+}
+/* ── MOBILE BOTTOM NAV ──────────────────────────────────────────── */
 .search-filter-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 0 14px;}
 .search-input-wrap{position:relative;flex:1;min-width:180px;}
 .search-input-wrap input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 11px 7px 32px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px;outline:none;transition:border-color .15s;}
@@ -370,6 +481,22 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
   <button class="main-tab active" onclick="switchMainPage('patrimoine',this)">◈ &nbsp;Patrimoine</button>
   <button class="main-tab" onclick="switchMainPage('depenses',this)">⟳ &nbsp;Dépenses &amp; Revenus</button>
   <button class="main-tab" onclick="switchMainPage('credits',this)">🏦 &nbsp;Crédits</button>
+</nav>
+
+<!-- ══ MOBILE BOTTOM NAV ══ -->
+<nav class="mobile-bottom-nav" id="mobileBottomNav">
+  <button class="mob-tab active" id="mobTab-patrimoine" onclick="switchMainPage('patrimoine',this);syncMobTabs('patrimoine')">
+    <span class="mob-icon">◈</span><span class="mob-label">Patrimoine</span>
+  </button>
+  <button class="mob-tab" id="mobTab-depenses" onclick="switchMainPage('depenses',this);syncMobTabs('depenses')">
+    <span class="mob-icon">⟳</span><span class="mob-label">Dépenses</span>
+  </button>
+  <button class="mob-tab" id="mobTab-credits" onclick="switchMainPage('credits',this);syncMobTabs('credits')">
+    <span class="mob-icon">🏦</span><span class="mob-label">Crédits</span>
+  </button>
+  <button class="mob-tab" id="mobTab-add" onclick="openAssetModal()">
+    <span class="mob-icon" style="font-size:22px;color:var(--gold)">+</span><span class="mob-label">Ajouter</span>
+  </button>
 </nav>
 
 <!-- ══ SUB NAV (patrimoine only) ══ -->
@@ -1489,34 +1616,6 @@ function usdToEur(usd) {
 // ══════════════════════════════════════════════════════
 // ASSET VALUE HELPERS
 // ══════════════════════════════════════════════════════
-function getAssetValue(a) {
-  switch(a.cat) {
-    case 'crypto':   return (parseFloat(a.cryptoQty)||0) * (parseFloat(a.cryptoPrice)||0);
-    case 'actions':  return (parseFloat(a.stockQty)||0) * (parseFloat(a.stockPrice||a.stockPRU)||0);
-    case 'livrets':  return parseFloat(a.livretSolde||a.value||0);
-    case 'per':      return parseFloat(a.perValeur||0);
-    case 'assurance-vie': return parseFloat(a.avValue||0);
-    case 'immobilier': return parseFloat(a.valeur||0);
-    case 'or':       return (parseFloat(a.metalWeight)||0) * (parseFloat(a.metalCurrentPrice||a.metalBuyPrice)||0);
-    default:         return parseFloat(a.value||a.valeur||0);
-  }
-}
-function getAssetCost(a) {
-  switch(a.cat) {
-    case 'crypto':   return (parseFloat(a.cryptoQty)||0) * (parseFloat(a.cryptoDCA||0));
-    case 'actions':  return (parseFloat(a.stockQty)||0) * (parseFloat(a.stockPRU)||0);
-    case 'livrets':  return parseFloat(a.livretSolde||a.value||0);
-    case 'per':      return parseFloat(a.perVersements||0);
-    case 'assurance-vie': return parseFloat(a.avCost||0);
-    case 'immobilier': return parseFloat(a.prixAchat||0);
-    case 'or':       return (parseFloat(a.metalWeight)||0) * (parseFloat(a.metalBuyPrice)||0);
-    default:         return parseFloat(a.cost||0);
-  }
-}
-function getTotalVal() {
-  return assets.reduce(function(s,a){ return s + getAssetValue(a); }, 0);
-}
-
 // ══════════════════════════════════════════════════════
 // HISTORY
 // ══════════════════════════════════════════════════════
@@ -1541,12 +1640,6 @@ function saveAll() {
   }
   localStorage.setItem('pat3_lastsave', new Date().toLocaleString('fr-FR'));
   localStorage.setItem('pat3_lastsave_ts', new Date().toISOString());
-}
-function getCredits() {
-  try { return JSON.parse(localStorage.getItem('pat3_credits') || '[]'); } catch(e) { return []; }
-}
-function getLivretRates() {
-  try { return JSON.parse(localStorage.getItem('pat3_rates') || '{}'); } catch(e) { return {}; }
 }
 function exportData() {
   const data = {assets, goals, aHistory, transactions, credits:getCredits(), exportedAt:new Date().toISOString(), version:3};
@@ -2212,12 +2305,20 @@ const IC=[
 // ══════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════
+function syncMobTabs(id) {
+  ['patrimoine','depenses','credits'].forEach(function(p){
+    var el = document.getElementById('mobTab-'+p);
+    if(el) el.classList.toggle('active', p===id);
+  });
+}
+
 function switchMainPage(id, btn) {
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.main-tab').forEach(b=>b.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
-  btn.classList.add('active');
+  if(btn) btn.classList.add('active');
   document.getElementById('subNav').style.display = id==='patrimoine' ? 'flex' : 'none';
+  syncMobTabs(id);
   if (id==='depenses') renderDep();
   if (id==='credits') renderCredits();
 }
@@ -2425,11 +2526,15 @@ function renderGlobal() {
     <!-- Projection -->
     ${renderProjection(assets, total, cost)}
 
-    <!-- Évolution du patrimoine (en dernier) -->
+    <!-- Évolution + Répartition par catégorie dans le temps -->
     <div class="panel" style="margin-bottom:18px">
       <div class="panel-header">
         <span class="panel-title">Évolution du patrimoine</span>
-        <div style="display:flex;gap:6px">
+        <div style="display:flex;gap:6px;align-items:center">
+          <div style="display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden">
+            <button class="view-btn active" onclick="setEvoMode('total',this)" style="padding:3px 10px;font-size:10px" id="evoModeTotal">Total</button>
+            <button class="view-btn" onclick="setEvoMode('stacked',this)" style="padding:3px 10px;font-size:10px" id="evoModeStacked">Par classe</button>
+          </div>
           <button class="filter-tag active" onclick="setChartP(12,this)">12M</button>
           <button class="filter-tag" onclick="setChartP(6,this)">6M</button>
           <button class="filter-tag" onclick="setChartP(3,this)">3M</button>
@@ -2437,6 +2542,9 @@ function renderGlobal() {
       </div>
       <div class="panel-body"><div style="height:220px"><canvas id="evoChart"></canvas></div></div>
     </div>
+
+    <!-- Performance par catégorie (waterfall) -->
+    ${renderPerformanceWaterfall(assets, total, cost)}
   `;
 
   requestAnimationFrame(()=>{
@@ -2445,6 +2553,7 @@ function renderGlobal() {
     updateDonutChart();
     _initScoreGauge();
     _initProjectionChart();
+    _renderPerformanceWaterfallChart();
   });
 }
 
@@ -3019,11 +3128,23 @@ function _initProjectionChart() {
 
 
 let chartPeriod = 12;
+let _evoMode = 'total'; // 'total' | 'stacked'
+var _stackedEvoChart = null;
+
+function setEvoMode(mode, btn) {
+  _evoMode = mode;
+  document.querySelectorAll('#evoModeTotal,#evoModeStacked').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  if(mode === 'stacked') { _renderStackedEvo(chartPeriod); }
+  else { updateEvoChart(chartPeriod); }
+}
+
 function setChartP(m, btn) {
   chartPeriod=m;
   document.querySelectorAll('.filter-tag').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  updateEvoChart(m);
+  if(btn) btn.classList.add('active');
+  if(_evoMode === 'stacked') _renderStackedEvo(m);
+  else updateEvoChart(m);
 }
 
 function updateEvoChart(months) {
@@ -3037,12 +3158,140 @@ function updateEvoChart(months) {
     const snap = snaps.find(h=>h.month===key);
     if (snap) { data.push(snap.val); }
     else if (i === 0) { data.push(total); }
-    else { data.push(null); } // Use null for missing data points — no fake interpolation
+    else { data.push(null); }
+  }
+  // Switch back to single-line mode
+  if(evoC.data.datasets.length > 1) {
+    // rebuild as single dataset
+    while(evoC.data.datasets.length > 1) evoC.data.datasets.pop();
+    evoC.data.datasets[0] = {data:[],borderColor:'#c9a84c',backgroundColor:'rgba(201,168,76,0.06)',borderWidth:1.5,fill:true,tension:0.4,pointRadius:0,pointHoverRadius:4};
   }
   evoC.data.labels=labels;
   evoC.data.datasets[0].data=data;
-  evoC.data.datasets[0].spanGaps=true; // connect across null gaps
+  evoC.data.datasets[0].spanGaps=true;
   evoC.update();
+}
+
+function _renderStackedEvo(months) {
+  const el = document.getElementById('evoChart');
+  if(!el) return;
+  const n=new Date(), labels=[];
+  for(let i=months;i>=0;i--) {
+    const d=new Date(n); d.setMonth(d.getMonth()-i);
+    labels.push(d.toLocaleDateString('fr-FR',{month:'short',year:i>0?undefined:'2-digit'}));
+  }
+  const total = getTotalVal();
+  const byCat = {};
+  assets.forEach(a=>{ byCat[a.cat]=(byCat[a.cat]||0)+getAssetValue(a); });
+  const activeCats = Object.keys(byCat).filter(c=>byCat[c]>0)
+    .sort((a,b)=>byCat[b]-byCat[a]);
+
+  // For each cat, build a flat series with current value (no historical per-cat data yet)
+  // Show current allocation proportions over each month snap
+  const snaps = aHistory.filter(h=>h.type==='snap');
+  const datasets = activeCats.map(cat => {
+    const catDef = CAT[cat]||CAT.autre;
+    const catShare = total>0 ? byCat[cat]/total : 0;
+    const data = [];
+    for(let i=months;i>=0;i--) {
+      const d=new Date(n); d.setMonth(d.getMonth()-i);
+      const key=d.toISOString().slice(0,7);
+      const snap=snaps.find(h=>h.month===key);
+      const snapVal = snap?snap.val:(i===0?total:null);
+      data.push(snapVal!==null ? Math.round(snapVal*catShare) : null);
+    }
+    return { label:catDef.label, data, backgroundColor:catDef.color+'99',
+      borderColor:catDef.color, borderWidth:1, fill:true, tension:0.3,
+      pointRadius:0, pointHoverRadius:3, spanGaps:true };
+  });
+
+  if(evoC) {
+    evoC.data.labels = labels;
+    evoC.data.datasets = datasets;
+    evoC.options.scales.y.stacked = true;
+    evoC.update();
+  }
+}
+
+// ── Performance waterfall par catégorie ───────────────────────────
+function renderPerformanceWaterfall(assets, total, cost) {
+  const byCat = {};
+  assets.forEach(a => {
+    const v = getAssetValue(a), c = getAssetCost(a);
+    if(!byCat[a.cat]) byCat[a.cat]={val:0,cost:0};
+    byCat[a.cat].val  += v;
+    byCat[a.cat].cost += c;
+  });
+  const cats = Object.keys(byCat).filter(c=>byCat[c].val>0);
+  if(!cats.length) return '';
+  return `<div class="panel" style="margin-bottom:18px">
+    <div class="panel-header">
+      <span class="panel-title">Performance par classe d'actifs</span>
+      <span style="font-size:10px;color:var(--muted)">Plus-value latente par catégorie</span>
+    </div>
+    <div class="panel-body"><div style="height:200px"><canvas id="waterfallChart"></canvas></div></div>
+  </div>`;
+}
+
+function _renderPerformanceWaterfallChart() {
+  const el = document.getElementById('waterfallChart');
+  if(!el || typeof Chart === 'undefined') return;
+  const existing = Chart.getChart(el); if(existing) existing.destroy();
+
+  const byCat = {};
+  assets.forEach(a => {
+    const v=getAssetValue(a), c=getAssetCost(a);
+    if(!byCat[a.cat]) byCat[a.cat]={val:0,cost:0};
+    byCat[a.cat].val+=v; byCat[a.cat].cost+=c;
+  });
+  const cats = Object.keys(byCat).filter(c=>byCat[c].val>0&&byCat[c].cost>0)
+    .sort((a,b)=>(byCat[b].val-byCat[b].cost)-(byCat[a].val-byCat[a].cost));
+
+  const labels = cats.map(c=>(CAT[c]||CAT.autre).icon+' '+(CAT[c]||CAT.autre).label);
+  const pvData = cats.map(c=>Math.round(byCat[c].val-byCat[c].cost));
+  const pvPctData = cats.map(c=>byCat[c].cost>0?((byCat[c].val-byCat[c].cost)/byCat[c].cost*100).toFixed(1):0);
+  const colors = pvData.map(v=>v>=0?'rgba(76,175,130,.75)':'rgba(224,92,92,.75)');
+  const borderColors = pvData.map(v=>v>=0?'#4caf82':'#e05c5c');
+
+  new Chart(el.getContext('2d'), {
+    type:'bar',
+    data:{
+      labels,
+      datasets:[{
+        label:'Plus-value (€)',
+        data: pvData,
+        backgroundColor: colors,
+        borderColor: borderColors,
+        borderWidth: 1,
+        borderRadius: 4,
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false, indexAxis:'y',
+      plugins:{
+        legend:{display:false},
+        tooltip:{
+          backgroundColor:'#1a1d22',borderColor:'#252830',borderWidth:1,
+          bodyColor:'#e8e6e0',titleColor:'#6b6e78',
+          callbacks:{
+            label: ctx => {
+              const pv = pvData[ctx.dataIndex];
+              const pct = pvPctData[ctx.dataIndex];
+              return ' '+(pv>=0?'+':'')+Math.round(pv).toLocaleString('fr-FR')+'€ ('+pct+'%)';
+            }
+          }
+        }
+      },
+      scales:{
+        x:{
+          grid:{color:'rgba(255,255,255,.03)'},
+          ticks:{color:'#6b6e78',font:{size:10},
+            callback:v=>v>=1000?Math.round(v/1000)+'k€':v+'€'}
+        },
+        y:{grid:{display:false},ticks:{color:'#e8e6e0',font:{size:10}}}
+      }
+    }
+  });
 }
 
 function updateDonutChart() {
@@ -4609,7 +4858,6 @@ function _deleteTrans(id){
 }
 
 function _editTrans(id){
-  console.log('[_editTrans] called, id=', id, 'modal=', document.getElementById('transModal'));
   try {
     const t = transactions.find(x=>x.id===id);
     if(!t){ toast('⚠ Transaction introuvable (id: '+id+')'); return; }
