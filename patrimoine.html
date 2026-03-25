@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2026-03-19-1000 -->
+<!-- v2026-03-19-1100 -->
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -200,7 +200,17 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
 .empty-state .big{font-size:32px;margin-bottom:10px;}
 
 /* TOAST */
-.toast{position:fixed;bottom:24px;right:24px;background:var(--surface);border:1px solid var(--gold);color:var(--gold2);padding:10px 16px;border-radius:8px;font-size:12px;z-index:9999;opacity:0;transform:translateY(8px);transition:all .3s;pointer-events:none;}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--surface);border:1px solid var(--gold);color:var(--gold2);padding:10px 16px;border-radius:8px;font-size:12px;z-index:9999;opacity:0;transform:translateY(8px);transition:all .3s;pointer-events:none;max-width:320px;line-height:1.4;}
+.toast.show{opacity:1;transform:translateY(0);}
+.toast.toast-ok{border-color:var(--green);color:var(--green);background:rgba(76,175,130,.12);}
+.toast.toast-err{border-color:var(--red);color:var(--red);background:rgba(224,92,92,.12);}
+.toast.toast-info{border-color:var(--blue);color:var(--blue);background:rgba(92,141,224,.12);}
+/* Save indicator dot in header */
+#saveIndicator{width:7px;height:7px;border-radius:50%;background:var(--muted);transition:background .3s;flex-shrink:0;}
+#saveIndicator.saving{background:#f59e0b;animation:pulse 1s infinite;}
+#saveIndicator.saved{background:var(--green);}
+#saveIndicator.error{background:var(--red);}
+@media(max-width:768px){.toast{bottom:80px;right:12px;left:12px;right:12px;}}
 .toast.show{opacity:1;transform:translateY(0);}
 
 /* DEPENSES */
@@ -468,6 +478,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
 <header>
   <div class="logo">PATRIMOINE<span> ◆</span></div>
   <div class="header-date" id="headerDate"></div><div style="font-size:9px;color:var(--muted);opacity:.5;letter-spacing:.05em" id="versionBadge">v2300</div>
+  <div id="saveIndicator" title="Statut de sauvegarde"></div>
   <div class="header-actions">
     <button class="btn btn-ghost" onclick="openSettings()" style="font-size:10px;padding:5px 11px" title="Paramètres & Clé API">⚙</button>
     <button class="btn btn-ghost" onclick="triggerImport()" style="font-size:10px;padding:5px 11px">↑ Importer</button>
@@ -588,7 +599,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
         <div class="search-filter-bar" style="padding:10px 16px 8px;">
           <div class="search-input-wrap" style="max-width:240px">
             <span class="search-icon">🔍</span>
-            <input type="text" id="transSearch" placeholder="Rechercher…" oninput="filterTransTable()" autocomplete="off">
+            <input type="text" id="transSearch" placeholder="Rechercher…" oninput="filterTransTableDebounced()" autocomplete="off">
           </div>
           <button class="filter-chip active" onclick="setTransFilter('all',this)">Tout</button>
           <button class="filter-chip inc" onclick="setTransFilter('income',this)">✦ Revenus</button>
@@ -1586,13 +1597,24 @@ function timeSince(iso) {
   if (h < 24) return 'il y a ' + h + 'h';
   return 'il y a ' + Math.floor(h / 24) + 'j';
 }
-function toast(msg, dur) {
+function toast(msg, dur, type) {
   const el = document.getElementById('toast');
   if (!el) return;
   el.textContent = msg;
+  el.className = 'toast';
+  if (type === 'ok'  || msg.startsWith('✅')) el.classList.add('toast-ok');
+  if (type === 'err' || msg.startsWith('⚠') || msg.startsWith('❌')) el.classList.add('toast-err');
+  if (type === 'info'|| msg.startsWith('ℹ️')) el.classList.add('toast-info');
   el.classList.add('show');
   clearTimeout(toast._t);
-  toast._t = setTimeout(function() { el.classList.remove('show'); }, dur || 3000);
+  toast._t = setTimeout(function() { el.classList.remove('show'); }, dur || 3500);
+}
+function _setSaveIndicator(state) {
+  var el = document.getElementById('saveIndicator');
+  if(!el) return;
+  el.className = state ? 'saving' : '';
+  if(state === 'saved') { el.classList.add('saved'); setTimeout(()=>el.className='',3000); }
+  if(state === 'error') { el.classList.add('error'); setTimeout(()=>el.className='',5000); }
 }
 
 // ══════════════════════════════════════════════════════
@@ -1630,12 +1652,52 @@ function pushAH(action, a) {
 // ══════════════════════════════════════════════════════
 // SAVE / LOAD
 // ══════════════════════════════════════════════════════
+// ── Cache de performance ─────────────────────────────────────────
+var _cachedTotal = null;
+var _cachedTotalTs = 0;
+function getTotalValCached() {
+  if (_cachedTotal !== null && Date.now() - _cachedTotalTs < 500) return _cachedTotal;
+  _cachedTotal = getTotalVal();
+  _cachedTotalTs = Date.now();
+  return _cachedTotal;
+}
+function _invalidateCache() { _cachedTotal = null; }
+
+// ── Debounce helper ───────────────────────────────────────────────
+function debounce(fn, ms) {
+  var t; return function() { clearTimeout(t); t = setTimeout(fn, ms); };
+}
+
 function saveAll() {
+  _invalidateCache();
   localStorage.setItem('pat3_assets', JSON.stringify(assets));
   odScheduleAutoSave();
-  const key = new Date().toISOString().slice(0,7), total = getTotalVal();
-  if (!aHistory.find(function(h){ return h.type==='snap' && h.month===key; }) && total > 0) {
-    aHistory.push({type:'snap', month:key, val:total, date:new Date().toISOString()});
+
+  // ── Snapshot mensuel enrichi avec répartition par catégorie ──
+  const key = new Date().toISOString().slice(0,7);
+  const total = getTotalVal();
+  const existingSnap = aHistory.find(function(h){ return h.type==='snap' && h.month===key; });
+
+  if (total > 0) {
+    // Compute per-category breakdown
+    const byCat = {};
+    assets.forEach(function(a) {
+      const v = getAssetValue(a);
+      if (v > 0) byCat[a.cat] = (byCat[a.cat]||0) + v;
+    });
+
+    if (!existingSnap) {
+      aHistory.push({
+        type: 'snap', month: key, val: total,
+        byCat: byCat, // NEW: per-category values
+        date: new Date().toISOString()
+      });
+    } else {
+      // Update existing snap with fresh values (update on every save this month)
+      existingSnap.val   = total;
+      existingSnap.byCat = byCat;
+      existingSnap.date  = new Date().toISOString();
+    }
     localStorage.setItem('pat3_ah', JSON.stringify(aHistory));
   }
   localStorage.setItem('pat3_lastsave', new Date().toLocaleString('fr-FR'));
@@ -1853,6 +1915,7 @@ async function oneDriveSave() {
   if (!_dbToken) { toast('⚠ Dropbox non connecté — cliquez 🔗 Connecter'); return; }
   const btn = document.getElementById('btnODSave');
   if (btn) { btn.textContent = '⏳ Sauvegarde…'; btn.disabled = true; }
+  _setSaveIndicator('saving');
   const data = {
     assets, goals, aHistory, transactions,
     credits: getCredits(),
@@ -1894,9 +1957,12 @@ async function oneDriveSave() {
     if (lsEl) lsEl.textContent = 'Sauvegardé à ' + ts;
     console.log('[Dropbox save] OK —', data.assets.length, 'actifs ·', data.transactions.length, 'transactions · savedAt:', data.savedAt);
     toast('☁️ Sauvegardé sur Dropbox (' + data.assets.length + ' actifs)');
+    _setSaveIndicator('saved');
+    _lastSavedHash = _dataHash(); // Mark as cleanly saved
   } catch(e) {
     console.error('[Dropbox save] error:', e);
     toast('⚠ Erreur Dropbox sauvegarde : ' + e.message);
+    _setSaveIndicator('error');
   } finally {
     if (btn) { btn.textContent = '↑ Sauver'; btn.disabled = false; }
   }
@@ -1991,9 +2057,22 @@ async function oneDriveLoad() {
     if (btn) { btn.textContent = '↓ Charger'; btn.disabled = false; }
   }
 }
+var _lastSavedHash = '';
+function _dataHash() {
+  // Quick hash to detect real changes before auto-saving
+  return (assets.length + '_' + transactions.length + '_' + getTotalVal().toFixed(0));
+}
+
 function odScheduleAutoSave() {
   clearTimeout(_odScheduleTimer);
-  _odScheduleTimer = setTimeout(oneDriveSave, 10000);
+  if (!_dbToken) return; // Don't schedule if not connected
+  _odScheduleTimer = setTimeout(function() {
+    const h = _dataHash();
+    if (h !== _lastSavedHash) {
+      _lastSavedHash = h;
+      oneDriveSave();
+    }
+  }, 30000); // 30s delay — avoids conflicts on rapid edits
 }
 function odDisconnect() {
   _dbToken = null;
@@ -3173,44 +3252,49 @@ function updateEvoChart(months) {
 }
 
 function _renderStackedEvo(months) {
-  const el = document.getElementById('evoChart');
-  if(!el) return;
+  if(!evoC) return;
   const n=new Date(), labels=[];
+  const monthKeys = [];
   for(let i=months;i>=0;i--) {
-    const d=new Date(n); d.setMonth(d.getMonth()-i);
+    const d=new Date(n.getFullYear(), n.getMonth()-i, 1);
     labels.push(d.toLocaleDateString('fr-FR',{month:'short',year:i>0?undefined:'2-digit'}));
+    monthKeys.push(d.toISOString().slice(0,7));
   }
-  const total = getTotalVal();
-  const byCat = {};
-  assets.forEach(a=>{ byCat[a.cat]=(byCat[a.cat]||0)+getAssetValue(a); });
-  const activeCats = Object.keys(byCat).filter(c=>byCat[c]>0)
-    .sort((a,b)=>byCat[b]-byCat[a]);
 
-  // For each cat, build a flat series with current value (no historical per-cat data yet)
-  // Show current allocation proportions over each month snap
   const snaps = aHistory.filter(h=>h.type==='snap');
+  const currentByCat = {};
+  assets.forEach(a=>{ const v=getAssetValue(a); if(v>0) currentByCat[a.cat]=(currentByCat[a.cat]||0)+v; });
+  const total = getTotalVal();
+
+  // Get all active categories
+  const activeCats = Object.keys(currentByCat).sort((a,b)=>currentByCat[b]-currentByCat[a]);
+
   const datasets = activeCats.map(cat => {
     const catDef = CAT[cat]||CAT.autre;
-    const catShare = total>0 ? byCat[cat]/total : 0;
-    const data = [];
-    for(let i=months;i>=0;i--) {
-      const d=new Date(n); d.setMonth(d.getMonth()-i);
-      const key=d.toISOString().slice(0,7);
-      const snap=snaps.find(h=>h.month===key);
-      const snapVal = snap?snap.val:(i===0?total:null);
-      data.push(snapVal!==null ? Math.round(snapVal*catShare) : null);
-    }
-    return { label:catDef.label, data, backgroundColor:catDef.color+'99',
-      borderColor:catDef.color, borderWidth:1, fill:true, tension:0.3,
-      pointRadius:0, pointHoverRadius:3, spanGaps:true };
+    const data = monthKeys.map((key, idx) => {
+      const snap = snaps.find(h=>h.month===key);
+      if (!snap) return idx === monthKeys.length-1 ? Math.round(currentByCat[cat]||0) : null;
+      // Use real per-cat data if available, else estimate from share
+      if (snap.byCat && snap.byCat[cat] !== undefined) return Math.round(snap.byCat[cat]);
+      // Fallback: apply current share to total snap (for old snaps without byCat)
+      const share = total>0 ? (currentByCat[cat]||0)/total : 0;
+      return Math.round(snap.val * share);
+    });
+    return {
+      label: catDef.icon+' '+catDef.label,
+      data, fill:true, tension:0.3,
+      backgroundColor: catDef.color+'88',
+      borderColor: catDef.color,
+      borderWidth: 1.5,
+      pointRadius: 0, pointHoverRadius: 4,
+      spanGaps: true
+    };
   });
 
-  if(evoC) {
-    evoC.data.labels = labels;
-    evoC.data.datasets = datasets;
-    evoC.options.scales.y.stacked = true;
-    evoC.update();
-  }
+  evoC.data.labels = labels;
+  evoC.data.datasets = datasets;
+  evoC.options.scales.y.stacked = true;
+  evoC.update();
 }
 
 // ── Performance waterfall par catégorie ───────────────────────────
@@ -4250,42 +4334,80 @@ function editAsset(id) {
   }
   document.getElementById('assetModal').classList.add('open');
 }
+// ── Validation helper ────────────────────────────────────────────
+function _validateField(id, condition, msg) {
+  var el = document.getElementById(id);
+  if (!el) return true; // field not present → not required
+  var ok = condition(el.value);
+  el.style.borderColor = ok ? '' : 'var(--red)';
+  el.style.boxShadow   = ok ? '' : '0 0 0 2px rgba(224,92,92,.2)';
+  if (!ok) { el.focus(); toast('⚠ ' + msg); }
+  return ok;
+}
+function _clearValidation() {
+  document.querySelectorAll('.form-input,.form-select').forEach(function(el){
+    el.style.borderColor = ''; el.style.boxShadow = '';
+  });
+}
+
 function saveAsset() {
+  _clearValidation();
   const name=document.getElementById('assetName').value.trim();
-  if(!name){toast('⚠ Nom requis');return;}
+  if(!_validateField('assetName', v=>v.trim().length>0, 'Le nom est requis')) return;
+
   const cat=document.getElementById('assetCat').value;
   const a={id:editAssetId||'asset_'+Date.now(),name,cat,
     date:document.getElementById('assetDate').value,
     note:document.getElementById('assetNote').value.trim()};
+
+  // ── Validation par catégorie ──────────────────────────────────
   if(cat==='livrets'){
     const lt=document.getElementById('livretType');
     a.livretType=lt?lt.value:'livret-a';
     a.livretBanque=document.getElementById('livretBanque').value.trim();
-    a.livretBalance=parseFloat(document.getElementById('livretBalance').value)||0;
-    a.livretRate=parseFloat(document.getElementById('livretRate').value)||0;
+    const bal = parseFloat(document.getElementById('livretBalance').value);
+    if(!_validateField('livretBalance', v=>parseFloat(v)>=0&&!isNaN(parseFloat(v)), 'Solde invalide (doit être ≥ 0)')) return;
+    a.livretBalance=bal||0;
+    const rate = parseFloat(document.getElementById('livretRate').value)||0;
+    if(!_validateField('livretRate', v=>parseFloat(v)>=0&&parseFloat(v)<30, 'Taux invalide (doit être entre 0 et 30%)')) return;
+    a.livretRate=rate;
+
   } else if(cat==='actions'){
     a.stockTicker=document.getElementById('stockTicker').value.trim().toUpperCase();
+    if(!_validateField('stockTicker', v=>v.trim().length>0, 'Ticker requis (ex: CW8, MSFT)')) return;
     a.stockExchange=document.getElementById('stockExchange').value;
     a.stockAccount=document.getElementById('stockAccount').value;
     a.stockBroker=(document.getElementById('stockBroker')||{}).value||'';
     a.stockBrokerGroup=a.stockBroker?a.stockBroker.toLowerCase().replace(/[^a-z0-9]/g,'_'):(a.stockAccount||'cto');
-    a.stockQty=parseFloat(document.getElementById('stockQty').value)||0;
+    const qty = parseFloat(document.getElementById('stockQty').value)||0;
+    if(!_validateField('stockQty', v=>parseFloat(v)>0, 'Quantité doit être > 0')) return;
+    a.stockQty=qty;
     a.stockPRU=parseFloat(document.getElementById('stockPRU').value)||0;
     a.stockPrice=parseFloat(document.getElementById('stockPrice').value)||0;
+    if(a.stockPRU<0||a.stockPrice<0){toast('⚠ Les prix ne peuvent pas être négatifs');return;}
     a.stockDiv=parseFloat(document.getElementById('stockDiv').value)||0;
+
   } else if(cat==='crypto'){
     a.cryptoCoin=document.getElementById('cryptoCoin').value;
     a.cryptoCustomId=document.getElementById('cryptoCustomId').value.trim();
+    if(a.cryptoCoin==='custom'&&!a.cryptoCustomId){toast('⚠ ID CoinGecko requis pour un coin personnalisé');return;}
     a.cryptoPlatform=document.getElementById('cryptoPlatform').value.trim();
-    a.cryptoQty=parseFloat(document.getElementById('cryptoQty').value)||0;
+    const qty=parseFloat(document.getElementById('cryptoQty').value)||0;
+    if(!_validateField('cryptoQty', v=>parseFloat(v)>0, 'Quantité doit être > 0')) return;
+    a.cryptoQty=qty;
     a.cryptoDCA=parseFloat(document.getElementById('cryptoDCA').value)||0;
     a.cryptoPrice=parseFloat(document.getElementById('cryptoPrice').value)||0;
+    if(a.cryptoDCA<0||a.cryptoPrice<0){toast('⚠ Les prix ne peuvent pas être négatifs');return;}
+
   } else if(cat==='scpi'){
     a.scpiMgr=document.getElementById('scpiMgr').value.trim();
     a.scpiMode=document.getElementById('scpiMode').value;
     a.scpiParts=parseFloat(document.getElementById('scpiParts').value)||0;
     a.scpiPartVal=parseFloat(document.getElementById('scpiPartVal').value)||0;
+    if(a.scpiParts<0||a.scpiPartVal<0){toast('⚠ Valeurs invalides');return;}
     a.scpiTDVM=parseFloat(document.getElementById('scpiTDVM').value)||0;
+    if(a.scpiTDVM<0||a.scpiTDVM>30){toast('⚠ TDVM invalide (0–30%)');return;}
+
   } else if(cat==='immobilier'){
     const it=document.getElementById('immoType');a.immoType=it?it.value:'rp';
     const ibt=document.getElementById('immoBienType');a.immoBienType=ibt?ibt.value:'appartement';
@@ -4293,6 +4415,7 @@ function saveAsset() {
     a.immoSurface=parseFloat(document.getElementById('immoSurface').value)||0;
     a.immoPrixM2=parseFloat(document.getElementById('immoPrixM2').value)||0;
     a.immoValue=parseFloat(document.getElementById('immoValue').value)||0;
+    if(a.immoValue<0){toast('⚠ Valeur du bien invalide');return;}
     a.immoTravaux=parseFloat(document.getElementById('immoTravaux').value)||0;
     a.immoCostNV=parseFloat(document.getElementById('immoCostNV').value)||0;
     a.immoNotaire=parseFloat(document.getElementById('immoNotaire').value)||0;
@@ -5749,6 +5872,7 @@ function filterTransTable() {
   var empty = document.getElementById('mTransEmpty');
   if(empty) empty.style.display = visible === 0 ? '' : 'none';
 }
+var filterTransTableDebounced = debounce(filterTransTable, 150);
 
 function _buildCatFilter(transactions) {
   var sel = document.getElementById('transCatFilter');
