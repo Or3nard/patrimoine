@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2026-03-25-1000 -->
+<!-- v2026-03-25-1200 -->
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -552,12 +552,14 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
         <button class="view-btn" onclick="setDepCompte('commun',this)">👫 Commun</button>
         <button class="view-btn" onclick="setDepCompte('global',this)">🌐 Global</button>
       </div>
-      <!-- Sélecteur mensuel/annuel/analytiques/calendrier -->
+      <!-- Sélecteur mensuel/annuel/analytiques/calendrier/récurrents/budget -->
       <div class="view-toggle">
         <button class="view-btn active" onclick="setDepView('mensuel',this)">Mensuel</button>
         <button class="view-btn" onclick="setDepView('annuel',this)">Annuel</button>
         <button class="view-btn" onclick="setDepView('analytiques',this)">📊 Analytiques</button>
         <button class="view-btn" onclick="setDepView('calendrier',this)">📅 Calendrier</button>
+        <button class="view-btn" onclick="setDepView('recurring',this)">🔄 Récurrents</button>
+        <button class="view-btn" onclick="setDepView('budget',this)">🎯 Budget</button>
       </div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -774,6 +776,33 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 3
       </div>
       <div id="calDayBody"></div>
     </div>
+  </div>
+
+  <!-- ══ TRANSACTIONS RÉCURRENTES ══ -->
+  <div id="depRecurring" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:2px">🔄 Transactions récurrentes</div>
+        <div style="font-size:11px;color:var(--muted)">Modèles appliqués automatiquement chaque mois</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost" id="btnApplyRecurring" onclick="applyRecurringThisMonth()">⚡ Appliquer ce mois</button>
+        <button class="btn btn-gold" onclick="openRecurringModal()">+ Ajouter</button>
+      </div>
+    </div>
+    <div id="recurringList"></div>
+  </div>
+
+  <!-- ══ BUDGET PAR CATÉGORIE ══ -->
+  <div id="depBudget" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:2px">🎯 Budget par catégorie</div>
+        <div style="font-size:11px;color:var(--muted)" id="budgetMonthLabel">Mois en cours</div>
+      </div>
+      <button class="btn btn-gold" onclick="openBudgetEditor()">✎ Définir les budgets</button>
+    </div>
+    <div id="budgetPanels"></div>
   </div>
 
 </div>
@@ -1920,8 +1949,12 @@ async function oneDriveSave() {
   const data = {
     assets, goals, aHistory, transactions,
     credits: getCredits(),
+    recurring: _getRecurring(),
+    agenda: _getAgenda(),
+    budget: _getBudget(),
+    pinHash: localStorage.getItem(LOCK_KEY) || undefined, // sync PIN hash across devices
     savedAt: new Date().toISOString(),
-    version: 3
+    version: 4
   };
 
   const _doUpload = async () => {
@@ -2039,6 +2072,18 @@ async function oneDriveLoad() {
     if (d.aHistory    && Array.isArray(d.aHistory))     { aHistory     = d.aHistory;     localStorage.setItem('pat3_ah',     JSON.stringify(aHistory));           loaded++; }
     if (d.transactions&& Array.isArray(d.transactions)) { transactions = d.transactions; localStorage.setItem('pat3_trans',  JSON.stringify(transactions));       loaded++; }
     if (d.credits     && Array.isArray(d.credits))      { saveCredits(d.credits);        loaded++; }
+    if (d.recurring   && Array.isArray(d.recurring))    { localStorage.setItem('pat3_recurring', JSON.stringify(d.recurring)); loaded++; }
+    if (d.agenda      && Array.isArray(d.agenda))       { localStorage.setItem('pat3_agenda',    JSON.stringify(d.agenda));    loaded++; }
+    if (d.budget      && typeof d.budget==='object')    { localStorage.setItem('pat3_budget',    JSON.stringify(d.budget));    loaded++; }
+
+    // ── PIN sync : if this device has no PIN yet, adopt the one from Dropbox ──
+    const localPin = localStorage.getItem(LOCK_KEY);
+    if (d.pinHash && !localPin) {
+      localStorage.setItem(LOCK_KEY, d.pinHash);
+      console.log('[PIN sync] Hash importé depuis Dropbox — même PIN utilisable sur cet appareil');
+      const hintEl = document.getElementById('lockHint');
+      if (hintEl) hintEl.textContent = '✅ Code synchronisé depuis Dropbox.';
+    }
 
     console.log('[Dropbox load] OK —', loaded, 'collections restaurées, savedAt:', remoteTs,
       '| assets:', (d.assets||[]).length, '| trans:', (d.transactions||[]).length);
@@ -2587,6 +2632,9 @@ function renderGlobal() {
 
     <!-- Allocation vs cible -->
     ${renderAllocCibles(assets, total)}
+
+    <!-- Agenda patrimonial -->
+    ${renderAgendaPanel()}
 
     <!-- Objectif Rentier + autres objectifs -->
     <div class="panel" style="margin-bottom:18px">
@@ -6955,6 +7003,481 @@ switchMainPage = function(id, btn) {
   if(id==='credits') renderCredits();
   if(id==='fiscal') { _loadFiscSettings(); renderFiscal(); }
 };
+
+// ════════════════════════════════════════════════════════════════════
+// 1. PIN PARTAGÉ — helpers (sync happens in oneDriveLoad/Save above)
+// ════════════════════════════════════════════════════════════════════
+// PIN hash is stored in Dropbox payload as `pinHash`.
+// On a new device with no stored PIN, unlockApp() falls into the
+// "first time" branch; if the user then loads from Dropbox, the hash
+// is written to localStorage → same PIN now works on both devices.
+// No code needed here beyond what's in oneDriveSave/Load.
+
+// ════════════════════════════════════════════════════════════════════
+// 2. TRANSACTIONS RÉCURRENTES
+// ════════════════════════════════════════════════════════════════════
+let _editRecurId = null;
+let _recurType = 'expense';
+let _recurCompte = 'perso';
+
+function _getRecurring() {
+  try { return JSON.parse(localStorage.getItem('pat3_recurring')||'[]'); } catch(e) { return []; }
+}
+function _saveRecurring(list) {
+  localStorage.setItem('pat3_recurring', JSON.stringify(list));
+}
+
+function setRecurType(type) {
+  _recurType = type;
+  ['income','expense','transfer'].forEach(function(t) {
+    var btn = document.getElementById('rBtn'+t.charAt(0).toUpperCase()+t.slice(1));
+    if(btn) btn.className = 'btn ' + (t===type ? (t==='income'?'btn-green':t==='expense'?'btn-red':'btn-blue') : 'btn-ghost');
+  });
+  var catGrp = document.getElementById('rCatGroup');
+  var comGrp = document.getElementById('rCompteGroup');
+  var tfGrp  = document.getElementById('rTransferGroup');
+  if(catGrp)  catGrp.style.display   = type==='transfer' ? 'none' : 'block';
+  if(comGrp)  comGrp.style.display   = type==='transfer' ? 'none' : 'block';
+  if(tfGrp)   tfGrp.style.display    = type==='transfer' ? 'block' : 'none';
+  // rebuild category select
+  var sel = document.getElementById('rCat');
+  if(sel && type!=='transfer') {
+    sel.innerHTML = (type==='income'?IC:EC).map(function(c){ return '<option value="'+c.id+'">'+c.icon+' '+c.label+'</option>'; }).join('');
+  }
+}
+function setRecurCompte(c) {
+  _recurCompte = c;
+  var bp = document.getElementById('rBtnPerso'), bc = document.getElementById('rBtnCommun');
+  if(bp) { bp.classList.toggle('active', c==='perso'); bp.style.background = c==='perso'?'rgba(80,140,220,.18)':''; }
+  if(bc) { bc.classList.toggle('active', c==='commun'); bc.style.background = c==='commun'?'rgba(180,100,220,.18)':''; }
+}
+function openRecurringModal(id) {
+  _editRecurId = id||null;
+  var recurring = _getRecurring();
+  var r = id ? recurring.find(function(x){return x.id===id;}) : null;
+  document.getElementById('recurringModalTitle').textContent = id ? '🔄 Modifier la récurrence' : '🔄 Nouvelle récurrence';
+  document.getElementById('rDesc').value   = r ? r.desc   : '';
+  document.getElementById('rAmount').value = r ? r.amount : '';
+  document.getElementById('rDay').value    = r ? r.day    : '';
+  setRecurType(r ? r.type : 'expense');
+  setRecurCompte(r ? (r.compte||'perso') : 'perso');
+  if(r && r.type!=='transfer') {
+    setTimeout(function(){ var sel=document.getElementById('rCat'); if(sel&&r.cat) sel.value=r.cat; }, 50);
+  }
+  if(r && r.type==='transfer') {
+    var fromEl=document.getElementById('rFrom'); if(fromEl) fromEl.value=r.transferFrom||'perso';
+    var toEl=document.getElementById('rTo'); if(toEl) toEl.value=r.transferTo||'commun';
+  }
+  var m = document.getElementById('recurringModal');
+  if(m){ m.classList.add('open'); m.style.display='flex'; }
+}
+function closeRecurringModal() {
+  var m = document.getElementById('recurringModal');
+  if(m){ m.classList.remove('open'); m.style.display=''; }
+}
+function saveRecurring() {
+  var desc   = document.getElementById('rDesc').value.trim();
+  var amount = parseFloat(document.getElementById('rAmount').value)||0;
+  var day    = parseInt(document.getElementById('rDay').value)||1;
+  if(!desc || !amount) { toast('⚠ Description et montant requis'); return; }
+  var recurring = _getRecurring();
+  var r = {
+    id: _editRecurId || 'rec_'+Date.now(),
+    type: _recurType, desc, amount, day, active: true,
+    compte: _recurCompte,
+    cat:  _recurType==='transfer' ? 'virement' : (document.getElementById('rCat')?.value||'autre_dep'),
+    transferFrom: document.getElementById('rFrom')?.value||'perso',
+    transferTo:   document.getElementById('rTo')?.value||'commun',
+  };
+  if(_editRecurId) {
+    var idx = recurring.findIndex(function(x){return x.id===_editRecurId;});
+    if(idx>=0) recurring[idx]=r; else recurring.push(r);
+  } else { recurring.push(r); }
+  _saveRecurring(recurring);
+  closeRecurringModal();
+  renderRecurringView();
+  toast('✅ Récurrence '+(r.type==='transfer'?'virement':'transaction')+' enregistrée');
+}
+function deleteRecurring(id) {
+  if(!confirm('Supprimer cette récurrence ?')) return;
+  var list = _getRecurring().filter(function(r){return r.id!==id;});
+  _saveRecurring(list);
+  renderRecurringView();
+  toast('✅ Récurrence supprimée');
+}
+function toggleRecurring(id) {
+  var list = _getRecurring();
+  var r = list.find(function(x){return x.id===id;});
+  if(r) r.active = !r.active;
+  _saveRecurring(list);
+  renderRecurringView();
+}
+function applyRecurringThisMonth() {
+  var recurring = _getRecurring().filter(function(r){return r.active;});
+  if(!recurring.length) { toast('ℹ️ Aucune récurrence active'); return; }
+  var year = navY, month = navM;
+  var applied = 0, skipped = 0;
+  recurring.forEach(function(r) {
+    // Check if already applied this month (same desc + same month)
+    var alreadyExists = transactions.some(function(t){
+      var d = new Date(t.date);
+      return d.getFullYear()===year && d.getMonth()===month
+        && t.desc===r.desc && Math.abs(t.amount-r.amount)<0.01;
+    });
+    if(alreadyExists) { skipped++; return; }
+    var day = Math.min(r.day, new Date(year, month+1, 0).getDate());
+    var dateStr = year+'-'+String(month+1).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+    if(r.type==='transfer') {
+      var tid = 'tf_rec_'+Date.now()+'_'+applied;
+      transactions.push({id:'tr_rec_'+Date.now()+'_out', type:'transfer', transferDir:'out',
+        transferId:tid, desc:r.desc, amount:r.amount, date:dateStr, note:'Récurrence auto',
+        compte:r.transferFrom, transferFrom:r.transferFrom, transferTo:r.transferTo, cat:'virement'});
+      transactions.push({id:'tr_rec_'+(Date.now()+1)+'_in', type:'transfer', transferDir:'in',
+        transferId:tid, desc:r.desc, amount:r.amount, date:dateStr, note:'Récurrence auto',
+        compte:r.transferTo, transferFrom:r.transferFrom, transferTo:r.transferTo, cat:'virement'});
+    } else {
+      transactions.push({id:'tr_rec_'+Date.now()+'_'+applied, type:r.type,
+        desc:r.desc, amount:r.amount, date:dateStr, cat:r.cat,
+        note:'Récurrence auto', compte:r.compte});
+    }
+    applied++;
+  });
+  localStorage.setItem('pat3_trans', JSON.stringify(transactions));
+  renderDep();
+  toast('✅ '+applied+' transaction'+(applied>1?'s':'')+' ajoutée'+(applied>1?'s':'')+(skipped?' · '+skipped+' déjà présente'+(skipped>1?'s':''):''));
+}
+function renderRecurringView() {
+  var el = document.getElementById('recurringList'); if(!el) return;
+  var recurring = _getRecurring();
+  if(!recurring.length) {
+    el.innerHTML = '<div class="empty-state"><div class="big">🔄</div><div>Aucune récurrence — ajoutez vos transactions mensuelles fixes</div><div style="margin-top:8px;font-size:11px;color:var(--muted)">Salaire, loyer, mensualités crédit, abonnements, virement compte commun…</div></div>';
+    return;
+  }
+  var typeColors = {income:'var(--green)',expense:'var(--red)',transfer:'var(--blue)'};
+  var typeLabels = {income:'Revenu',expense:'Dépense',transfer:'Virement'};
+  var typeIcons  = {income:'✦',expense:'✕',transfer:'↔'};
+  el.innerHTML = '<div class="panel"><table class="data-table"><thead><tr>'
+    +'<th style="padding-left:18px">Description</th><th>Type</th><th>Montant</th>'
+    +'<th>Jour</th><th>Compte</th><th>Actif</th><th>Actions</th>'
+    +'</tr></thead><tbody>'
+    + recurring.map(function(r) {
+      var col = typeColors[r.type]||'var(--muted)';
+      var compteLabel = r.type==='transfer'
+        ? esc(r.transferFrom==='perso'?'👤':'👫')+' → '+(r.transferTo==='commun'?'👫':'👤')
+        : (r.compte==='commun'?'👫 Commun':'👤 Perso');
+      return '<tr class="data-row">'
+        +'<td style="padding-left:18px;font-weight:600">'+esc(r.desc)+'</td>'
+        +'<td><span class="type-badge '+r.type+'" style="color:'+col+'">'+typeIcons[r.type]+' '+typeLabels[r.type]+'</span></td>'
+        +'<td style="font-weight:600;color:'+col+'">'+fmt(r.amount)+'</td>'
+        +'<td style="color:var(--muted)">'+r.day+'</td>'
+        +'<td style="font-size:11px;color:var(--muted)">'+compteLabel+'</td>'
+        +'<td><button onclick="toggleRecurring(\''+r.id+'\')" style="background:none;border:1px solid var(--border);border-radius:5px;padding:3px 8px;cursor:pointer;font-size:11px;color:'+(r.active?'var(--green)':'var(--muted)')+'">'+( r.active?'✓ ON':'○ OFF')+'</button></td>'
+        +'<td><div style="display:flex;gap:5px" onclick="event.stopPropagation()">'
+        +'<button class="action-btn" onclick="openRecurringModal(\''+r.id+'\')">✎</button>'
+        +'<button class="action-btn danger" onclick="deleteRecurring(\''+r.id+'\')">✕</button>'
+        +'</div></td>'
+        +'</tr>';
+    }).join('')
+    +'</tbody></table></div>';
+}
+
+// ════════════════════════════════════════════════════════════════════
+// 3. AGENDA PATRIMONIAL
+// ════════════════════════════════════════════════════════════════════
+let _editAgendaId = null;
+function _getAgenda() {
+  try { return JSON.parse(localStorage.getItem('pat3_agenda')||'[]'); } catch(e) { return []; }
+}
+function _saveAgenda(list) { localStorage.setItem('pat3_agenda', JSON.stringify(list)); }
+
+function openAgendaModal(id) {
+  _editAgendaId = id||null;
+  var items = _getAgenda();
+  var item = id ? items.find(function(x){return x.id===id;}) : null;
+  document.getElementById('agendaModalTitle').textContent = id?'📅 Modifier le rappel':'📅 Nouveau rappel';
+  document.getElementById('agTitle').value = item?item.title:'';
+  document.getElementById('agDate').value  = item?item.date:'';
+  document.getElementById('agNote').value  = item?item.note:'';
+  var sel = document.getElementById('agType'); if(sel&&item) sel.value=item.type||'reminder';
+  var m = document.getElementById('agendaModal');
+  if(m){ m.classList.add('open'); m.style.display='flex'; }
+}
+function closeAgendaModal() {
+  var m = document.getElementById('agendaModal');
+  if(m){ m.classList.remove('open'); m.style.display=''; }
+}
+function saveAgendaItem() {
+  var title = document.getElementById('agTitle').value.trim();
+  var date  = document.getElementById('agDate').value;
+  if(!title||!date) { toast('⚠ Titre et date requis'); return; }
+  var items = _getAgenda();
+  var item = { id: _editAgendaId||'ag_'+Date.now(), title, date,
+    type: document.getElementById('agType')?.value||'reminder',
+    note: document.getElementById('agNote').value.trim() };
+  if(_editAgendaId) { var idx=items.findIndex(function(x){return x.id===_editAgendaId;}); if(idx>=0) items[idx]=item; else items.push(item); }
+  else items.push(item);
+  _saveAgenda(items);
+  closeAgendaModal();
+  renderSubPage(currentSubPage);
+  toast('✅ Rappel enregistré');
+}
+function deleteAgendaItem(id) {
+  if(!confirm('Supprimer ce rappel ?')) return;
+  _saveAgenda(_getAgenda().filter(function(x){return x.id!==id;}));
+  renderSubPage(currentSubPage);
+}
+function renderAgendaPanel() {
+  var items = _getAgenda().sort(function(a,b){return new Date(a.date)-new Date(b.date);});
+  var now = Date.now();
+  var typeIcons = {autocall:'📈',renewal:'🔄',tax:'📋',immo:'🏠',reminder:'💡'};
+  var upcoming = items.filter(function(i){return new Date(i.date)>=new Date(new Date().toDateString());});
+  var past     = items.filter(function(i){return new Date(i.date)<new Date(new Date().toDateString());});
+
+  if(!items.length) return `<div class="panel" style="margin-bottom:18px">
+    <div class="panel-header">
+      <span class="panel-title">📅 Agenda patrimonial</span>
+      <button class="btn btn-gold" onclick="openAgendaModal()" style="font-size:10px;padding:4px 10px">+ Rappel</button>
+    </div>
+    <div class="panel-body"><div class="empty-state"><div>Aucun rappel — ajoutez des échéances importantes</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px">Autocalls, révision loyer, échéances fiscales…</div>
+    </div></div></div>`;
+
+  var rows = upcoming.map(function(item) {
+    var daysLeft = Math.ceil((new Date(item.date)-now)/86400000);
+    var urgency = daysLeft<30?'var(--red)':daysLeft<90?'#f59e0b':'var(--green)';
+    var urgencyBg = daysLeft<30?'rgba(224,92,92,.08)':daysLeft<90?'rgba(245,158,11,.08)':'rgba(76,175,130,.06)';
+    return `<div style="display:flex;align-items:flex-start;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border);background:${urgencyBg}">
+      <span style="font-size:18px;flex:0 0 auto;margin-top:2px">${typeIcons[item.type]||'📅'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;color:var(--text)">${esc(item.title)}</div>
+        ${item.note?`<div style="font-size:11px;color:var(--muted)">${esc(item.note)}</div>`:''}
+      </div>
+      <div style="text-align:right;flex:0 0 auto">
+        <div style="font-size:12px;font-weight:700;color:${urgency}">${daysLeft===0?'Aujourd\'hui':daysLeft===1?'Demain':'Dans '+daysLeft+'j'}</div>
+        <div style="font-size:10px;color:var(--muted)">${fmtDate(item.date)}</div>
+      </div>
+      <div style="display:flex;gap:4px;flex:0 0 auto">
+        <button class="action-btn" onclick="openAgendaModal('${item.id}')">✎</button>
+        <button class="action-btn danger" onclick="deleteAgendaItem('${item.id}')">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="panel" style="margin-bottom:18px">
+    <div class="panel-header">
+      <span class="panel-title">📅 Agenda patrimonial</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        ${upcoming.length?`<span class="panel-badge" style="background:rgba(224,92,92,.1);color:var(--red)">${upcoming.length} à venir</span>`:''}
+        <button class="btn btn-gold" onclick="openAgendaModal()" style="font-size:10px;padding:4px 10px">+ Rappel</button>
+      </div>
+    </div>
+    ${rows}
+    ${past.length?`<div style="padding:8px 16px;font-size:10px;color:var(--muted)">${past.length} rappel${past.length>1?'s':''} passé${past.length>1?'s':''} — <button onclick="this.nextElementSibling.style.display='';this.style.display='none'" style="background:none;border:none;color:var(--blue);cursor:pointer;font-family:inherit;font-size:10px">Afficher</button><div style="display:none">${past.map(function(item){return '<div style="padding:6px 0;font-size:11px;color:var(--muted);border-bottom:1px solid var(--border)">'+typeIcons[item.type]+' '+esc(item.title)+' — '+fmtDate(item.date)+'<button class="action-btn danger" onclick="deleteAgendaItem(\''+item.id+'\')" style="margin-left:8px">✕</button></div>';}).join('')}</div></div>`:''}
+  </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// 4. RAPPORT PDF MENSUEL
+// ════════════════════════════════════════════════════════════════════
+function generatePDFReport() {
+  var MONTHS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  var monthLabel = MONTHS[navM]+' '+navY;
+  var total = getTotalVal(), cost = getTotalCost(), pv = total-cost;
+  var mT = transactions.filter(function(t){ var d=new Date(t.date); return d.getFullYear()===navY&&d.getMonth()===navM&&t.type!=='transfer'; });
+  var inc = mT.filter(function(t){return t.type==='income';}).reduce(function(s,t){return s+t.amount;},0);
+  var exp = mT.filter(function(t){return t.type==='expense';}).reduce(function(s,t){return s+t.amount;},0);
+  var rate = inc>0?(inc-exp)/inc*100:0;
+
+  // Category breakdown
+  var byExpCat = {};
+  mT.filter(function(t){return t.type==='expense';}).forEach(function(t){ byExpCat[t.cat]=(byExpCat[t.cat]||0)+t.amount; });
+  var catRows = Object.entries(byExpCat).sort(function(a,b){return b[1]-a[1];}).map(function(e){
+    var cd = EC.find(function(c){return c.id===e[0];})||EC[EC.length-1];
+    return '<tr><td>'+cd.icon+' '+cd.label+'</td><td style="text-align:right;color:#e05c5c">'+fmt(e[1])+'</td></tr>';
+  }).join('');
+
+  var byCat = {};
+  assets.forEach(function(a){ byCat[a.cat]=(byCat[a.cat]||0)+getAssetValue(a); });
+  var patRows = Object.entries(byCat).sort(function(a,b){return b[1]-a[1];}).map(function(e){
+    var cd = CAT[e[0]]||CAT.autre;
+    return '<tr><td>'+cd.icon+' '+cd.label+'</td><td style="text-align:right">'+fmt(e[1])+'</td><td style="text-align:right;color:var(--muted)">'+(total>0?(e[1]/total*100).toFixed(1)+'%':'—')+'</td></tr>';
+  }).join('');
+
+  var w = window.open('','_blank','width=800,height=900');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Rapport Patrimonial — ${monthLabel}</title>
+  <style>
+    body{font-family:'Segoe UI',Arial,sans-serif;color:#1a1a1a;margin:0;padding:32px;font-size:13px;}
+    h1{font-size:22px;color:#c9a84c;margin:0 0 4px}
+    h2{font-size:15px;color:#333;margin:24px 0 10px;border-bottom:2px solid #f0e8d0;padding-bottom:6px;}
+    .subtitle{color:#888;font-size:12px;margin-bottom:28px;}
+    .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
+    .kpi{background:#faf8f3;border:1px solid #e8e0cc;border-radius:8px;padding:14px;text-align:center;}
+    .kpi-label{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;}
+    .kpi-value{font-size:20px;font-weight:700;}
+    table{width:100%;border-collapse:collapse;margin-bottom:16px;}
+    th{font-size:10px;color:#888;text-align:left;padding:6px 10px;border-bottom:2px solid #eee;text-transform:uppercase;}
+    td{padding:7px 10px;border-bottom:1px solid #f5f5f5;}
+    tr:last-child td{border-bottom:none;}
+    .footer{margin-top:40px;font-size:10px;color:#aaa;text-align:center;border-top:1px solid #eee;padding-top:12px;}
+    @media print{body{padding:16px;}button{display:none!important;}}
+  </style>
+  </head><body>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start">
+    <div><h1>PATRIMOINE ◆</h1><div class="subtitle">Rapport mensuel — ${monthLabel}</div></div>
+    <div style="text-align:right;font-size:11px;color:#888">Généré le ${new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'})}<br>
+    <button onclick="window.print()" style="margin-top:8px;background:#c9a84c;border:none;color:#fff;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:11px">🖨 Imprimer / PDF</button></div>
+  </div>
+
+  <h2>Patrimoine</h2>
+  <div class="kpi-row">
+    <div class="kpi"><div class="kpi-label">Patrimoine brut</div><div class="kpi-value" style="color:#c9a84c">${fmt(total)}</div></div>
+    <div class="kpi"><div class="kpi-label">Investissement</div><div class="kpi-value">${fmt(cost)}</div></div>
+    <div class="kpi"><div class="kpi-label">Plus-value latente</div><div class="kpi-value" style="color:${pv>=0?'#4caf82':'#e05c5c'}">${pv>=0?'+':''}${fmt(pv)}</div></div>
+    <div class="kpi"><div class="kpi-label">Performance</div><div class="kpi-value" style="color:${pv>=0?'#4caf82':'#e05c5c'}">${cost>0?(pv/cost*100).toFixed(1):0}%</div></div>
+  </div>
+  <table><thead><tr><th>Classe</th><th style="text-align:right">Valeur</th><th style="text-align:right">Part</th></tr></thead>
+  <tbody>${patRows}</tbody></table>
+
+  <h2>Revenus & Dépenses — ${monthLabel}</h2>
+  <div class="kpi-row">
+    <div class="kpi"><div class="kpi-label">Revenus</div><div class="kpi-value" style="color:#4caf82">${fmt(inc)}</div></div>
+    <div class="kpi"><div class="kpi-label">Dépenses</div><div class="kpi-value" style="color:#e05c5c">${fmt(exp)}</div></div>
+    <div class="kpi"><div class="kpi-label">Solde</div><div class="kpi-value" style="color:${inc-exp>=0?'#4caf82':'#e05c5c'}">${fmt(inc-exp)}</div></div>
+    <div class="kpi"><div class="kpi-label">Taux d'épargne</div><div class="kpi-value" style="color:#5c8de0">${rate.toFixed(0)}%</div></div>
+  </div>
+  ${catRows?`<table><thead><tr><th>Catégorie</th><th style="text-align:right">Dépenses</th></tr></thead><tbody>${catRows}</tbody></table>`:''}
+
+  <div class="footer">Dashboard Patrimoine — Données personnelles confidentielles — ${new Date().toLocaleDateString('fr-FR')}</div>
+  </body></html>`);
+  w.document.close();
+  toast('📄 Rapport ouvert — cliquez "Imprimer / PDF" dans la fenêtre');
+}
+
+// ════════════════════════════════════════════════════════════════════
+// 5. BUDGET PAR CATÉGORIE
+// ════════════════════════════════════════════════════════════════════
+function _getBudget() {
+  try { return JSON.parse(localStorage.getItem('pat3_budget')||'{}'); } catch(e) { return {}; }
+}
+function _saveBudget(b) { localStorage.setItem('pat3_budget', JSON.stringify(b)); }
+
+function openBudgetEditor() {
+  var budget = _getBudget();
+  var el = document.getElementById('budgetEditorBody'); if(!el) return;
+  el.innerHTML = EC.map(function(c) {
+    var val = budget[c.id]||0;
+    return `<div class="form-row" style="margin-bottom:8px">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">${c.icon} ${c.label}</label>
+        <input class="form-input" data-catid="${c.id}" type="number" placeholder="0" value="${val||''}" style="font-size:12px;padding:6px 10px">
+      </div>
+    </div>`;
+  }).join('');
+  var m = document.getElementById('budgetEditorModal');
+  if(m){ m.classList.add('open'); m.style.display='flex'; }
+}
+function saveBudgetEditor() {
+  var budget = {};
+  document.querySelectorAll('#budgetEditorBody input[data-catid]').forEach(function(el){
+    var v = parseFloat(el.value)||0;
+    if(v>0) budget[el.dataset.catid] = v;
+  });
+  _saveBudget(budget);
+  var m = document.getElementById('budgetEditorModal');
+  if(m){ m.classList.remove('open'); m.style.display=''; }
+  renderBudgetView();
+  toast('✅ Budgets enregistrés');
+}
+function renderBudgetView() {
+  var el = document.getElementById('budgetPanels'); if(!el) return;
+  var budget = _getBudget();
+  var hasBudget = Object.keys(budget).length > 0;
+  var labelEl = document.getElementById('budgetMonthLabel');
+  var MONTHS=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  if(labelEl) labelEl.textContent = MONTHS[navM]+' '+navY;
+
+  if(!hasBudget) {
+    el.innerHTML = '<div class="empty-state"><div class="big">🎯</div><div>Aucun budget défini</div><div style="font-size:11px;color:var(--muted);margin-top:6px">Définissez vos enveloppes mensuelles par catégorie</div><button class="btn btn-gold" onclick="openBudgetEditor()" style="margin-top:12px">✎ Définir les budgets</button></div>';
+    return;
+  }
+
+  var mT = transactions.filter(function(t){
+    var d=new Date(t.date); return d.getFullYear()===navY&&d.getMonth()===navM&&t.type==='expense';
+  });
+  var actual = {};
+  mT.forEach(function(t){ actual[t.cat]=(actual[t.cat]||0)+t.amount; });
+
+  var totalBudget = Object.values(budget).reduce(function(s,v){return s+v;},0);
+  var totalActual = mT.reduce(function(s,t){return s+t.amount;},0);
+
+  var panels = Object.entries(budget).sort(function(a,b){return b[1]-a[1];}).map(function(e){
+    var catId=e[0], budgetAmt=e[1];
+    var actualAmt = actual[catId]||0;
+    var pct = Math.min(100, actualAmt/budgetAmt*100);
+    var over = actualAmt > budgetAmt;
+    var color = pct<70?'var(--green)':pct<90?'var(--gold)':over?'var(--red)':'#f59e0b';
+    var cd = EC.find(function(c){return c.id===catId;})||EC[EC.length-1];
+    return `<div style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+        <span style="font-size:12px;font-weight:600">${cd.icon} ${cd.label}</span>
+        <div style="display:flex;gap:12px;align-items:center">
+          <span style="font-size:12px;color:${color};font-weight:${over?'700':'400'}">${fmt(actualAmt)}</span>
+          <span style="font-size:11px;color:var(--muted)">/ ${fmt(budgetAmt)}</span>
+          <span style="font-size:11px;font-weight:700;color:${color};min-width:38px;text-align:right">${pct.toFixed(0)}%</span>
+          ${over?`<span style="font-size:10px;color:var(--red)">+${fmt(actualAmt-budgetAmt)}</span>`:''}
+        </div>
+      </div>
+      <div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${Math.min(100,pct).toFixed(1)}%;background:${color};border-radius:4px;transition:width .5s ease"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  var globalPct = totalBudget>0 ? Math.min(100,totalActual/totalBudget*100) : 0;
+  var globalColor = globalPct<70?'var(--green)':globalPct<90?'var(--gold)':'var(--red)';
+
+  el.innerHTML = `
+    <div class="panel" style="margin-bottom:16px">
+      <div class="panel-body" style="padding:14px 18px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-size:12px;font-weight:600;color:var(--text)">Budget global du mois</span>
+          <span style="font-size:14px;font-weight:700;color:${globalColor}">${fmt(totalActual)} / ${fmt(totalBudget)}</span>
+        </div>
+        <div style="height:10px;background:var(--surface2);border-radius:5px;overflow:hidden;margin-bottom:8px">
+          <div style="height:100%;width:${globalPct.toFixed(1)}%;background:${globalColor};border-radius:5px;transition:width .5s"></div>
+        </div>
+        <div style="font-size:10px;color:var(--muted)">${globalPct.toFixed(0)}% utilisé · ${fmt(Math.max(0,totalBudget-totalActual))} restant</div>
+      </div>
+    </div>
+    <div class="panel"><div class="panel-body" style="padding:18px 20px">${panels}</div></div>`;
+}
+
+// ── Hook views into setDepView override ─────────────────────────
+var _origSetDepViewNew = setDepView;
+setDepView = function(view, btn) {
+  depView = view;
+  document.querySelectorAll('.view-btn').forEach(function(b){ b.classList.remove('active'); });
+  if(btn) btn.classList.add('active');
+  var ids = ['depMensuel','depAnnuel','depAnalytiques','depCalendrier','depRecurring','depBudget'];
+  ids.forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display='none'; });
+  var target = {mensuel:'depMensuel',annuel:'depAnnuel',analytiques:'depAnalytiques',
+    calendrier:'depCalendrier',recurring:'depRecurring',budget:'depBudget'}[view]||'depMensuel';
+  var tEl = document.getElementById(target);
+  if(tEl) tEl.style.display = '';
+  if(view==='recurring') renderRecurringView();
+  else if(view==='budget') renderBudgetView();
+  else if(view==='mensuel'||view==='annuel') { if(view==='mensuel') _renderMensuel(); else _renderAnnuel(); }
+  else if(view==='analytiques') _renderAnalytiques();
+  else if(view==='calendrier') _renderCalendrier();
+};
+
+// ── Add PDF button to header ─────────────────────────────────────
+// Expose globally for the header button
+window.generatePDFReport = generatePDFReport;
+window.openAgendaModal   = openAgendaModal;
+window.openRecurringModal= openRecurringModal;
+window.openBudgetEditor  = openBudgetEditor;
 </script>
 
 <!-- CSV IMPORT MODAL -->
@@ -7094,6 +7617,89 @@ switchMainPage = function(id, btn) {
 </div>
 
 <!-- EARLY REPAYMENT MODAL (kept simple, main sim is inline) -->
+
+<!-- ══ RECURRING MODAL ══ -->
+<div class="modal-overlay" id="recurringModal" style="z-index:9200">
+<div class="modal sm">
+  <div class="modal-title" id="recurringModalTitle">🔄 Nouvelle récurrence</div>
+  <div class="form-group"><label class="form-label">Type</label>
+    <div style="display:flex;gap:7px">
+      <button class="btn btn-green" id="rBtnIncome" onclick="setRecurType('income')" style="flex:1;justify-content:center">✦ Revenu</button>
+      <button class="btn btn-ghost" id="rBtnExpense" onclick="setRecurType('expense')" style="flex:1;justify-content:center">✕ Dépense</button>
+      <button class="btn btn-ghost" id="rBtnTransfer" onclick="setRecurType('transfer')" style="flex:1;justify-content:center">↔ Virement</button>
+    </div>
+  </div>
+  <div class="form-group"><label class="form-label">Description</label>
+    <input class="form-input" id="rDesc" placeholder="ex: Salaire, Loyer, Virement charges…"></div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Montant (€)</label>
+      <input class="form-input" id="rAmount" type="number" step="0.01" placeholder="0"></div>
+    <div class="form-group"><label class="form-label">Jour du mois</label>
+      <input class="form-input" id="rDay" type="number" min="1" max="31" placeholder="ex: 1"></div>
+  </div>
+  <div class="form-group" id="rCatGroup"><label class="form-label">Catégorie</label>
+    <select class="form-select" id="rCat"></select></div>
+  <div class="form-group" id="rCompteGroup"><label class="form-label">Compte</label>
+    <div style="display:flex;gap:7px">
+      <button class="btn active" id="rBtnPerso" onclick="setRecurCompte('perso')" style="flex:1;justify-content:center">👤 Personnel</button>
+      <button class="btn" id="rBtnCommun" onclick="setRecurCompte('commun')" style="flex:1;justify-content:center">👫 Commun</button>
+    </div>
+  </div>
+  <div id="rTransferGroup" style="display:none">
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">De</label>
+        <select class="form-select" id="rFrom"><option value="perso">👤 Personnel</option><option value="commun">👫 Commun</option></select></div>
+      <div class="form-group"><label class="form-label">Vers</label>
+        <select class="form-select" id="rTo"><option value="commun">👫 Commun</option><option value="perso">👤 Personnel</option></select></div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-ghost" onclick="closeRecurringModal()">Annuler</button>
+    <button class="btn btn-gold" onclick="saveRecurring()">Enregistrer</button>
+  </div>
+</div>
+</div>
+
+<!-- ══ BUDGET EDITOR MODAL ══ -->
+<div class="modal-overlay" id="budgetEditorModal" style="z-index:9200">
+<div class="modal" style="max-width:560px">
+  <div class="modal-title">🎯 Définir les budgets mensuels</div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:14px">Entrez 0 pour ignorer une catégorie.</div>
+  <div id="budgetEditorBody" style="max-height:60vh;overflow-y:auto"></div>
+  <div class="modal-footer">
+    <button class="btn btn-ghost" onclick="document.getElementById('budgetEditorModal').classList.remove('open');document.getElementById('budgetEditorModal').style.display=''">Annuler</button>
+    <button class="btn btn-gold" onclick="saveBudgetEditor()">Enregistrer</button>
+  </div>
+</div>
+</div>
+
+<!-- ══ AGENDA MODAL ══ -->
+<div class="modal-overlay" id="agendaModal" style="z-index:9200">
+<div class="modal sm">
+  <div class="modal-title" id="agendaModalTitle">📅 Nouveau rappel</div>
+  <div class="form-group"><label class="form-label">Titre</label>
+    <input class="form-input" id="agTitle" placeholder="ex: Autocall Tempo Engie, Révision loyer…"></div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Date</label>
+      <input class="form-input" id="agDate" type="date"></div>
+    <div class="form-group"><label class="form-label">Type</label>
+      <select class="form-select" id="agType">
+        <option value="autocall">📈 Autocall / Échéance produit</option>
+        <option value="renewal">🔄 Renouvellement contrat</option>
+        <option value="tax">📋 Échéance fiscale</option>
+        <option value="immo">🏠 Immobilier</option>
+        <option value="reminder">💡 Rappel général</option>
+      </select>
+    </div>
+  </div>
+  <div class="form-group"><label class="form-label">Note</label>
+    <input class="form-input" id="agNote" placeholder="Détail optionnel…"></div>
+  <div class="modal-footer">
+    <button class="btn btn-ghost" onclick="closeAgendaModal()">Annuler</button>
+    <button class="btn btn-gold" onclick="saveAgendaItem()">Enregistrer</button>
+  </div>
+</div>
+</div>
 
 </body>
 </html>
