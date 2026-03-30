@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2026-03-25-1400 -->
+<!-- v2026-03-30-1200 -->
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -1830,8 +1830,26 @@ function unlockApp() {
   buildSubNav();
   renderSubPage(currentSubPage);
   fetchEurUsd().then(function() { buildSubNav(); renderSubPage(currentSubPage); });
-  fetchAllCryptoPrices();
-  fetchAllStockPrices();
+
+  // ── Fetch prices (crypto first — fast, then stocks via Worker) ─
+  fetchAllCryptoPrices().then(function() {
+    renderSubPage(currentSubPage);
+    fetchAllStockPrices().then(function() {
+      renderSubPage(currentSubPage);
+      console.log('[Cotations] Toutes les cotations chargées ✅');
+    });
+  });
+
+  // ── Auto-refresh toutes les heures ────────────────────────────
+  if (window._priceRefreshTimer) clearInterval(window._priceRefreshTimer);
+  window._priceRefreshTimer = setInterval(async function() {
+    console.log('[Cotations] Auto-refresh horaire…');
+    await fetchAllCryptoPrices();
+    await fetchAllStockPrices();
+    renderSubPage(currentSubPage);
+    buildSubNav();
+  }, 60 * 60 * 1000); // toutes les heures
+
   const _pendingCode=sessionStorage.getItem('db_pending_code');
   if(_pendingCode){sessionStorage.removeItem('db_pending_code');_exchangeToken(_pendingCode).then(function(){updateSyncBanner();buildSubNav();renderSubPage(currentSubPage);});}
   else{_checkDropboxRefreshToken().then(function(){updateSyncBanner();}).catch(function(){});}
@@ -2136,38 +2154,58 @@ function odDisconnect() {
 async function fetchAllCryptoPrices() {
   const list = assets.filter(function(a){ return a.cat==='crypto'; });
   if (!list.length) return;
-  const ids = Array.from(new Set(list.map(function(a){ return a.cryptoCoin==='custom'?a.cryptoCustomId:a.cryptoCoin; }).filter(Boolean)));
+  // Skip if all fresh
+  const stale = list.filter(a => _priceIsStale(a.priceUpdatedAt));
+  if (!stale.length) { console.log('[Cotations] Crypto : tous les cours sont frais (<30min)'); return; }
+  const ids = Array.from(new Set(stale.map(function(a){ return a.cryptoCoin==='custom'?a.cryptoCustomId:a.cryptoCoin; }).filter(Boolean)));
   if (!ids.length) return;
   try {
-    const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids='+ids.join(',')+'&vs_currencies=eur&include_24hr_change=true');
-    if (!res.ok) throw new Error('API error');
+    const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids='+ids.join(',')+'&vs_currencies=eur&include_24hr_change=true',
+      { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error('CoinGecko HTTP '+res.status);
     const data = await res.json();
+    let updated = 0;
     list.forEach(function(a) {
       const id = a.cryptoCoin==='custom'?a.cryptoCustomId:a.cryptoCoin;
       if (data[id]) {
-        a.cryptoPrice = data[id].eur;
-        a.change24h = data[id].eur_24h_change;
+        a.cryptoPrice    = data[id].eur;
+        a.change24h      = data[id].eur_24h_change;
         a.priceUpdatedAt = new Date().toISOString();
+        updated++;
       }
     });
-  } catch(e) { toast('⚠ CoinGecko indisponible — réessayez plus tard'); }
+    if (updated) saveAll();
+    console.log('[Cotations] Crypto mises à jour :', updated);
+  } catch(e) {
+    console.warn('[Cotations] CoinGecko indisponible :', e.message);
+    toast('⚠ CoinGecko indisponible — derniers cours conservés', 3000);
+  }
 }
 
 // ── Shared helpers ────────────────────────────────────────
 // ══════════════════════════════════════════════════════════════════
-// COTATIONS — cascade robuste 6 sources, cache, indicateur fraîcheur
+// COTATIONS — Cloudflare Worker + cascade fallback + cache intelligent
 // ══════════════════════════════════════════════════════════════════
 
-// CORS proxies that work with GitHub Pages (ranked by reliability)
+// ── Votre proxy Cloudflare Worker (priorité absolue) ─────────────
+const CF_WORKER = 'https://patrimoine.renard-olivier.workers.dev';
+
+// CORS proxies fallback (si le Worker est temporairement indisponible)
 const CORS_PROXIES = [
-  u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-  u => `https://thingproxy.freeboard.io/fetch/${u}`,
-  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+  u => `${CF_WORKER}?url=${encodeURIComponent(u)}`,           // 1. CF Worker (fiable)
+  u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`, // 2. fallback
+  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,      // 3. fallback
 ];
 
-async function _fetchWithProxies(targetUrl, timeout=6000) {
-  // Try direct first (works on some networks/browsers)
+// ── Cache intelligent : skip si cours < 30 min ───────────────────
+const PRICE_CACHE_MS = 30 * 60 * 1000; // 30 minutes
+
+function _priceIsStale(isoDate) {
+  if (!isoDate) return true;
+  return (Date.now() - new Date(isoDate).getTime()) > PRICE_CACHE_MS;
+}
+
+async function _fetchWithProxies(targetUrl, timeout=8000) {
   for (const mkUrl of [u=>u, ...CORS_PROXIES]) {
     try {
       const url = mkUrl(targetUrl);
@@ -2253,8 +2291,11 @@ function _priceAge(isoDate) {
 async function fetchAllStockPrices() {
   const list = assets.filter(a => a.cat==='actions' && (a.stockTicker||a.stockYahooTicker));
   if (!list.length) return [];
+  // Skip assets with fresh prices (< 30 min)
+  const stale = list.filter(a => _priceIsStale(a.priceUpdatedAt));
+  if (!stale.length) { console.log('[Cotations] Actions : tous les cours sont frais (<30min)'); return []; }
   const updated = [];
-  for (const a of list) {
+  for (const a of stale) {
     const res = await _fetchPriceForTicker(a.stockTicker||'', a.stockYahooTicker||a.stockTicker||'');
     if (res) {
       a.stockPrice     = res.price;
@@ -2265,6 +2306,7 @@ async function fetchAllStockPrices() {
     }
   }
   if (updated.length) saveAll();
+  console.log('[Cotations] Actions mises à jour :', updated.length, '/', stale.length);
   return updated;
 }
 
