@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2026-03-25-1200 -->
+<!-- v2026-03-25-1400 -->
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -2154,22 +2154,39 @@ async function fetchAllCryptoPrices() {
 }
 
 // ── Shared helpers ────────────────────────────────────────
-async function _fetchYahoo(yahooTicker) {
-  // 3-layer CORS cascade:
-  // 1. Direct Yahoo (works on Firefox / some networks)
-  // 2. allorigins.win proxy (free, no key needed)
-  // 3. Stooq.com CSV (reliable CORS, covers most European stocks)
-  const yUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/'+yahooTicker+'?interval=1d&range=2d';
-  const yUrl2= 'https://query2.finance.yahoo.com/v8/finance/chart/'+yahooTicker+'?interval=1d&range=2d';
-  const proxied1 = 'https://api.allorigins.win/raw?url='+encodeURIComponent(yUrl);
-  const proxied2 = 'https://corsproxy.io/?url='+encodeURIComponent(yUrl);
+// ══════════════════════════════════════════════════════════════════
+// COTATIONS — cascade robuste 6 sources, cache, indicateur fraîcheur
+// ══════════════════════════════════════════════════════════════════
 
-  // Try Yahoo direct (fast, no proxy latency)
-  for (const url of [yUrl, yUrl2]) {
+// CORS proxies that work with GitHub Pages (ranked by reliability)
+const CORS_PROXIES = [
+  u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+  u => `https://thingproxy.freeboard.io/fetch/${u}`,
+  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+];
+
+async function _fetchWithProxies(targetUrl, timeout=6000) {
+  // Try direct first (works on some networks/browsers)
+  for (const mkUrl of [u=>u, ...CORS_PROXIES]) {
     try {
-      const r = await fetch(url, {signal: AbortSignal.timeout(4000)});
-      if (!r.ok) continue;
-      const d = await r.json();
+      const url = mkUrl(targetUrl);
+      const r = await fetch(url, { signal: AbortSignal.timeout(timeout) });
+      if (r.ok) { const text = await r.text(); if (text && text.length > 10) return text; }
+    } catch(e) {}
+  }
+  return null;
+}
+
+async function _fetchYahoo(yahooTicker) {
+  const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1d&range=2d`;
+  const yUrl2= `https://query2.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1d&range=2d`;
+
+  for (const url of [yUrl, yUrl2]) {
+    const text = await _fetchWithProxies(url, 7000);
+    if (!text) continue;
+    try {
+      const d = JSON.parse(text);
       const meta = d?.chart?.result?.[0]?.meta;
       const price = meta?.regularMarketPrice;
       if (price && price > 0) {
@@ -2178,68 +2195,44 @@ async function _fetchYahoo(yahooTicker) {
       }
     } catch(e) {}
   }
-
-  // Try CORS proxies for Yahoo JSON
-  for (const url of [proxied1, proxied2]) {
-    try {
-      const r = await fetch(url, {signal: AbortSignal.timeout(6000)});
-      if (!r.ok) continue;
-      const d = await r.json();
-      const meta = d?.chart?.result?.[0]?.meta;
-      const price = meta?.regularMarketPrice;
-      if (price && price > 0) {
-        const prev = meta?.chartPreviousClose || meta?.previousClose || price;
-        return { price, change: prev>0 ? (price-prev)/prev*100 : 0, src:'proxy' };
-      }
-    } catch(e) {}
-  }
-
   return null;
 }
 
 async function _fetchStooq(yahooTicker) {
-  // Stooq uses lowercase ticker with dot for exchange (mc.pa, asml.nl, etc.)
-  // Yahoo suffix maps: .PA→.pl... actually stooq uses: mc.wa for Warsaw, mc.pl for Poland
-  // Euronext Paris = ticker.pa on stooq, Amsterdam = ticker.nl
-  const stooqMap = {'.PA':'.pa', '.AS':'.nl', '.L':'.uk', '.DE':'.de', '.MI':'.it', '.MC':'.mc'};
+  const stooqMap = {'.PA':'.pa', '.AS':'.nl', '.L':'.uk', '.DE':'.de', '.MI':'.it', '.MC':'.mc', '.BR':'.br'};
   let stooqTicker = yahooTicker.toLowerCase();
   for (const [y, s] of Object.entries(stooqMap)) {
     stooqTicker = stooqTicker.replace(y.toLowerCase(), s);
   }
-  const url = 'https://stooq.com/q/l/?s='+stooqTicker+'&f=sd2t2ohlcv&h&e=csv';
-  const proxied = 'https://api.allorigins.win/raw?url='+encodeURIComponent(url);
-  for (const u of [url, proxied]) {
-    try {
-      const r = await fetch(u, {signal: AbortSignal.timeout(6000)});
-      if (!r.ok) continue;
-      const text = await r.text();
-      const lines = text.trim().split('\n');
-      if (lines.length < 2) continue;
-      const cols = lines[1].split(',');
-      // CSV: Symbol,Date,Time,Open,High,Low,Close,Volume
-      const close = parseFloat(cols[6]);
-      const open  = parseFloat(cols[3]);
-      if (close && close > 0 && close !== 0.01) { // stooq returns 0.01 for N/A
-        const change = open > 0 ? (close-open)/open*100 : 0;
-        return { price: close, change, src:'stooq' };
-      }
-    } catch(e) {}
+  // Also try without suffix (US stocks)
+  for (const t of [stooqTicker, yahooTicker.toLowerCase().replace(/\.[a-z]+$/,'')]) {
+    const url = `https://stooq.com/q/l/?s=${t}&f=sd2t2ohlcv&h&e=csv`;
+    const text = await _fetchWithProxies(url, 7000);
+    if (!text) continue;
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) continue;
+    const cols = lines[1].split(',');
+    const close = parseFloat(cols[6]);
+    const open  = parseFloat(cols[3]);
+    if (close && close > 0 && close !== 0.01) {
+      return { price: close, change: open>0?(close-open)/open*100:0, src:'stooq' };
+    }
   }
   return null;
 }
 
 async function _fetchPriceForTicker(stockTicker, yahooTicker) {
-  // Try known yahoo ticker first, then fallback variants
   const toTry = yahooTicker
     ? [yahooTicker, stockTicker, stockTicker+'.PA', stockTicker+'.AS', stockTicker+'.L', stockTicker+'.DE']
     : [stockTicker, stockTicker+'.PA', stockTicker+'.AS', stockTicker+'.L', stockTicker+'.DE'];
   const unique = [...new Set(toTry)].filter(Boolean);
 
+  // Yahoo first (all proxy attempts)
   for (const t of unique) {
     const res = await _fetchYahoo(t);
     if (res) return { ...res, usedTicker: t };
   }
-  // Last resort: Stooq with each ticker variant
+  // Stooq fallback
   for (const t of unique) {
     const res = await _fetchStooq(t);
     if (res) return { ...res, usedTicker: t };
@@ -2247,16 +2240,26 @@ async function _fetchPriceForTicker(stockTicker, yahooTicker) {
   return null;
 }
 
+// Price age indicator — shown next to each asset
+function _priceAge(isoDate) {
+  if (!isoDate) return { label: 'jamais', color: 'var(--red)', old: true };
+  const mins = (Date.now() - new Date(isoDate)) / 60000;
+  if (mins < 60)   return { label: Math.round(mins)+'min', color: 'var(--green)', old: false };
+  if (mins < 1440) return { label: Math.round(mins/60)+'h', color: 'var(--gold)', old: false };
+  const days = Math.floor(mins/1440);
+  return { label: days+'j', color: days>3?'var(--red)':'#f59e0b', old: days>1 };
+}
+
 async function fetchAllStockPrices() {
-  const list = assets.filter(function(a){ return a.cat==='actions' && (a.stockTicker||a.stockYahooTicker); });
+  const list = assets.filter(a => a.cat==='actions' && (a.stockTicker||a.stockYahooTicker));
   if (!list.length) return [];
   const updated = [];
   for (const a of list) {
-    const res = await _fetchPriceForTicker(a.stockTicker||'', a.stockYahooTicker||'');
+    const res = await _fetchPriceForTicker(a.stockTicker||'', a.stockYahooTicker||a.stockTicker||'');
     if (res) {
-      a.stockPrice      = res.price;
-      a.change24h       = res.change;
-      a.priceUpdatedAt  = new Date().toISOString();
+      a.stockPrice     = res.price;
+      a.change24h      = res.change;
+      a.priceUpdatedAt = new Date().toISOString();
       if (res.usedTicker) a.stockYahooTicker = res.usedTicker;
       updated.push(a.name);
     }
@@ -2266,45 +2269,38 @@ async function fetchAllStockPrices() {
 }
 
 async function refreshGroupPrices(ids) {
+  const btn = document.getElementById('refreshAllBtn');
+  if(btn) { btn.textContent='↻ Actualisation…'; btn.disabled=true; }
   toast('↻ Actualisation en cours…');
-  var updated = 0;
-  for (var i=0; i<ids.length; i++) {
-    var a = assets.find(function(x){return x.id===ids[i];});
+  let updated = 0;
+  for (const id of ids) {
+    const a = assets.find(x=>x.id===id);
     if (!a) continue;
-    const res = await _fetchPriceForTicker(a.stockTicker||'', a.stockYahooTicker||'');
+    const res = await _fetchPriceForTicker(a.stockTicker||'', a.stockYahooTicker||a.stockTicker||'');
     if (res) {
-      a.stockPrice     = res.price;
-      a.change24h      = res.change;
-      a.priceUpdatedAt = new Date().toISOString();
-      if (res.usedTicker) a.stockYahooTicker = res.usedTicker;
+      a.stockPrice=res.price; a.change24h=res.change;
+      a.priceUpdatedAt=new Date().toISOString();
+      if(res.usedTicker) a.stockYahooTicker=res.usedTicker;
       updated++;
     }
   }
-  if (updated > 0) {
-    saveAll();
-    renderSubPage(currentSubPage);
-    toast('✅ ' + updated + ' cours mis à jour');
-  } else {
-    toast('⚠ Aucun cours récupéré — vérifiez les tickers');
-  }
+  if(btn) { btn.textContent='↻ Actualiser les cours'; btn.disabled=false; }
+  if (updated > 0) { saveAll(); renderSubPage(currentSubPage); toast('✅ '+updated+' cours mis à jour'); }
+  else toast('⚠ Aucun cours récupéré — sources temporairement indisponibles');
 }
 
 async function refreshSinglePrice(assetId) {
-  const a = assets.find(function(x){return x.id===assetId;});
+  const a = assets.find(x=>x.id===assetId);
   if (!a) return;
-  if (!a.stockTicker && !a.stockYahooTicker) { toast('⚠ Pas de ticker pour ' + a.name); return; }
-  // (button state managed by page re-render)
-  const res = await _fetchPriceForTicker(a.stockTicker||'', a.stockYahooTicker||'');
+  if (!a.stockTicker && !a.stockYahooTicker) { toast('⚠ Pas de ticker pour '+a.name); return; }
+  const res = await _fetchPriceForTicker(a.stockTicker||'', a.stockYahooTicker||a.stockTicker||'');
   if (res) {
-    a.stockPrice     = res.price;
-    a.change24h      = res.change;
-    a.priceUpdatedAt = new Date().toISOString();
-    if (res.usedTicker) a.stockYahooTicker = res.usedTicker;
-    saveAll();
-    renderSubPage(currentSubPage);
-    toast('✅ ' + a.name + ' → ' + res.price.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' € (via ' + res.src + ')');
+    a.stockPrice=res.price; a.change24h=res.change; a.priceUpdatedAt=new Date().toISOString();
+    if(res.usedTicker) a.stockYahooTicker=res.usedTicker;
+    saveAll(); renderSubPage(currentSubPage);
+    toast('✅ '+a.name+' → '+res.price.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+'€ ('+res.src+')');
   } else {
-    toast('⚠ Cours introuvable pour ' + (a.stockTicker||a.stockYahooTicker));
+    toast('⚠ Cours introuvable — toutes les sources sont indisponibles pour '+( a.stockTicker||a.stockYahooTicker));
   }
 }
 
@@ -2568,6 +2564,9 @@ function renderGlobal() {
       <button class="btn btn-ghost" onclick="refreshAllPrices()" id="refreshAllBtn">↻ Actualiser les cours</button>
       <button class="btn btn-gold" onclick="openAssetModal()">+ Ajouter un actif</button>
     </div>
+
+    <!-- Widget : Prochaine action recommandée -->
+    ${_renderNextActionWidget()}
 
     <!-- KPIs strip -->
     <div class="kpi-strip" style="margin-bottom:18px">
@@ -6491,13 +6490,77 @@ function _parseDate(str) {
   return null;
 }
 
+// ══════════════════════════════════════════════════════════════════
+// AUTO-CATÉGORISATION — moteur de règles + apprentissage utilisateur
+// ══════════════════════════════════════════════════════════════════
+const _CAT_RULES = {
+  // Revenus
+  income: [
+    { patterns: ['salaire','paie','virement salaire','paye','traitement'], cat: 'salaire' },
+    { patterns: ['loyer','locataire','quittance','bail'], cat: 'loyer_recu' },
+    { patterns: ['prime','bonus','gratification'], cat: 'prime' },
+    { patterns: ['dividende','coupon','interet','intérêt'], cat: 'dividende' },
+    { patterns: ['allocat','caf','aide','prestation','assedic','chomage','chômage','rsa'], cat: 'allocations' },
+    { patterns: ['remboursement','rembours'], cat: 'remboursement_recu' },
+    { patterns: ['freelance','honoraire','facture','mission'], cat: 'freelance' },
+  ],
+  // Dépenses
+  expense: [
+    { patterns: ['loyer','quittance de loyer','bail'], cat: 'logement' },
+    { patterns: ['edf','engie','electricite','électricité','gaz','eau','chauffage','energie','énergie','veolia'], cat: 'energie' },
+    { patterns: ['sncf','ratp','navigo','bus','metro','métro','tgv','inoui','ouigo','blablacar','train','avion','air france','transavia','ryanair','easyjet','parking'], cat: 'transport' },
+    { patterns: ['carrefour','leclerc','lidl','aldi','intermarche','intermarch','casino','monoprix','franprix','super u','picard','biocoop','auchan','cora','spar'], cat: 'alimentation' },
+    { patterns: ['restaurant','mcdo','mcdonald','burger','pizza','sushi','noodle','kebab','brasserie','bistro','boulanger'], cat: 'restaurants' },
+    { patterns: ['amazon','fnac','darty','boulanger','ikea','leroy merlin','bricomarche','castorama','maisons du monde'], cat: 'shopping' },
+    { patterns: ['netflix','spotify','disney','canal','deezer','amazon prime','apple','google play','itunes','xbox','playstation','steam'], cat: 'abonnements' },
+    { patterns: ['sfr','bouygues telecom','orange','free','red by sfr','numericable','sosh'], cat: 'telecom' },
+    { patterns: ['pharmacie','docteur','medecin','médecin','hopital','hôpital','mutuelle','cpam','secu','santé','sante','dentiste','opticien'], cat: 'sante' },
+    { patterns: ['assurance auto','assurance habitation','assurance vie','pno','mma','maif','maaf','groupama','axa','allianz'], cat: 'assurances' },
+    { patterns: ['remboursement credit','credit','crédit','prêt','pret','mensualite','mensualité','crd','loa'], cat: 'credits_remb' },
+    { patterns: ['frais bancaire','cotisation carte','abonnement banque','agios','commission'], cat: 'frais_bancaires' },
+    { patterns: ['impot','impôt','taxe','tax foncière','fonciere','habitation','dgfip','tresor public'], cat: 'impots' },
+    { patterns: ['sport','fitness','salle de sport','piscine','tennis','club'], cat: 'sport_loisirs' },
+    { patterns: ['coiffeur','beaute','beauté','pharmacie','cosmet','parfum'], cat: 'hygiene_beaute' },
+    { patterns: ['ecole','école','cantine','sortie scolaire','cours','formation','université','universite'], cat: 'education' },
+    { patterns: ['cheque','chèque'], cat: 'autre_dep' },
+  ]
+};
+
+// User-learned rules (from corrections)
+function _getLearnedRules() {
+  try { return JSON.parse(localStorage.getItem('pat3_cat_rules')||'{}'); } catch(e) { return {}; }
+}
+function _learnCatRule(desc, cat) {
+  var rules = _getLearnedRules();
+  var key = desc.toLowerCase().trim().slice(0,30);
+  rules[key] = cat;
+  localStorage.setItem('pat3_cat_rules', JSON.stringify(rules));
+}
+
+function _autoCategory(desc, type) {
+  var d = desc.toLowerCase().trim();
+  // 1. Check user-learned rules first (exact prefix match)
+  var learned = _getLearnedRules();
+  for (var key of Object.keys(learned)) {
+    if (d.startsWith(key) || d.includes(key)) return learned[key];
+  }
+  // 2. Check static rules
+  var rules = _CAT_RULES[type] || _CAT_RULES.expense;
+  for (var rule of rules) {
+    for (var pat of rule.patterns) {
+      if (d.includes(pat)) return rule.cat;
+    }
+  }
+  return type==='income' ? 'autre_inc' : 'autre_dep';
+}
+
 function doCSVImport() {
   if(!_csvRows.length){ toast('⚠ Aucune donnée à importer'); return; }
   var ci = parseInt(document.getElementById('csvColDate')?.value)||0;
   var di = parseInt(document.getElementById('csvColDesc')?.value)||1;
   var ai = parseInt(document.getElementById('csvColAmt')?.value)||2;
   var compte = document.getElementById('csvCompte')?.value||'perso';
-  var imported=0, skipped=0;
+  var imported=0, skipped=0, autoCat=0;
 
   _csvRows.forEach(function(row) {
     var rawDate = row[ci]||'';
@@ -6508,10 +6571,13 @@ function doCSVImport() {
 
     if(!desc||isNaN(amount)||amount===0||!date) { skipped++; return; }
     var type = amount>0?'income':'expense';
+    var cat  = _autoCategory(desc, type);
+    if (cat !== (type==='income'?'autre_inc':'autre_dep')) autoCat++;
+
     transactions.push({
       id:'csv_'+Date.now()+'_'+imported,
-      type:type, desc:desc, amount:Math.abs(amount), date:date,
-      cat:type==='income'?'autre_inc':'autre_dep', note:'Import CSV', compte:compte
+      type, desc, amount:Math.abs(amount), date, cat,
+      note:'Import CSV', compte
     });
     imported++;
   });
@@ -6519,7 +6585,9 @@ function doCSVImport() {
   localStorage.setItem('pat3_trans', JSON.stringify(transactions));
   closeCSVImport();
   renderDep();
-  toast('✅ '+imported+' transaction'+(imported>1?'s':'')+' importée'+(imported>1?'s':'')+(skipped?' — '+skipped+' ignorée'+(skipped>1?'s':''):''));
+  toast('✅ '+imported+' transaction'+(imported>1?'s':'')+' importée'+(imported>1?'s':'')
+    +' · '+autoCat+' catégorisée'+(autoCat>1?'s':'')+' automatiquement'
+    +(skipped?' · '+skipped+' ignorée'+(skipped>1?'s':''):''), 4000);
 }
 
 
@@ -7478,6 +7546,157 @@ window.generatePDFReport = generatePDFReport;
 window.openAgendaModal   = openAgendaModal;
 window.openRecurringModal= openRecurringModal;
 window.openBudgetEditor  = openBudgetEditor;
+
+// ════════════════════════════════════════════════════════════════════
+// WIDGET : PROCHAINE ACTION RECOMMANDÉE
+// ════════════════════════════════════════════════════════════════════
+function _renderNextActionWidget() {
+  var actions = [];
+  var total = getTotalVal(), cost = getTotalCost();
+  var allCredits = getCredits();
+
+  // 1. PEA : capacité restante + suggestion versement mensuel
+  var peaAssets = assets.filter(a => a.cat==='actions' && a.stockAccount==='pea');
+  var peaVers = peaAssets.reduce((s,a)=>s+parseFloat(a.stockQty||0)*parseFloat(a.stockPRU||0),0);
+  var peaRest = Math.max(0, 150000 - peaVers);
+  if (peaRest > 5000) {
+    actions.push({ priority: 10, icon:'📈', color:'var(--blue)',
+      title: 'Alimenter le PEA',
+      desc: `Capacité restante : <b>${fmt(Math.round(peaRest))}</b> — versez sur <b>PCAM/DCAM</b> à 0,20% de frais`,
+      cta: 'Voir PEA', ctaFn: "switchMainPage('fiscal',null);syncMobTabs('fiscal');_loadFiscSettings();renderFiscal()" });
+  }
+
+  // 2. Livrets surdimensionnés
+  var livrets = assets.filter(a=>a.cat==='livrets');
+  var livretTotal = livrets.reduce((s,a)=>s+parseFloat(a.livretBalance||0),0);
+  var incomeM = transactions.filter(t=>{
+    var d=new Date(t.date); return d.getMonth()===new Date().getMonth()&&t.type==='income';
+  }).reduce((s,t)=>s+t.amount,0) || 3500;
+  var idealLivret = incomeM * 6;
+  if (livretTotal > idealLivret * 1.2) {
+    actions.push({ priority: 8, icon:'💰', color:'var(--gold)',
+      title: 'Livrets en excès',
+      desc: `${fmt(Math.round(livretTotal))} en livrets à 1,5% — idéal : <b>${fmt(Math.round(idealLivret))}</b> (6 mois de revenus). Excédent : <b>${fmt(Math.round(livretTotal-idealLivret))}</b> à réinvestir`,
+      cta: 'Voir Fiscal', ctaFn: "switchMainPage('fiscal',null);syncMobTabs('fiscal');_loadFiscSettings();renderFiscal()" });
+  }
+
+  // 3. Agenda : prochain rappel urgent
+  var agenda = _getAgenda().filter(i=>new Date(i.date)>=new Date()).sort((a,b)=>new Date(a.date)-new Date(b.date));
+  if (agenda.length) {
+    var next = agenda[0];
+    var days = Math.ceil((new Date(next.date)-Date.now())/86400000);
+    if (days < 90) {
+      actions.push({ priority: days<30?12:7, icon:'📅', color: days<30?'var(--red)':'#f59e0b',
+        title: esc(next.title),
+        desc: `Échéance <b>${days===0?'aujourd\'hui':days===1?'demain':'dans '+days+' jours'}</b> — ${fmtDate(next.date)}${next.note?' · '+esc(next.note):''}`,
+        cta: 'Agenda', ctaFn: null });
+    }
+  }
+
+  // 4. Cours périmés (> 3 jours)
+  var staleAssets = assets.filter(a => a.cat==='actions' && a.priceUpdatedAt && _priceAge(a.priceUpdatedAt).old);
+  if (staleAssets.length) {
+    actions.push({ priority: 5, icon:'↻', color:'var(--muted)',
+      title: 'Cours périmés',
+      desc: `<b>${staleAssets.length} actif${staleAssets.length>1?'s':''}</b> avec des cours de plus de 3 jours : ${staleAssets.map(a=>esc(a.name.split(' ')[0])).join(', ')}`,
+      cta: 'Actualiser', ctaFn: 'refreshAllPrices()' });
+  }
+
+  // 5. PER défiscalisation
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem('pat3_fisc')||'{}'); } catch(e){}
+  var tmi = parseFloat(saved.tmi||30), rev = parseFloat(saved.rev||0);
+  if (tmi >= 30 && rev > 0) {
+    var plafond = Math.min(35194, rev*0.10);
+    var perVers = assets.filter(a=>a.cat==='per').reduce((s,a)=>s+parseFloat(a.perVersements||0),0);
+    if (plafond > 1000 && perVers < plafond * 0.5) {
+      actions.push({ priority: 6, icon:'🌅', color:'#9b72cf',
+        title: 'Défiscaliser via PER',
+        desc: `Plafond déductible : <b>${fmt(Math.round(plafond))}</b> — économie IR potentielle : <b>${fmt(Math.round(plafond*tmi/100))}</b> à votre TMI ${tmi}%`,
+        cta: 'Simuler', ctaFn: "switchMainPage('fiscal',null);syncMobTabs('fiscal');_loadFiscSettings();renderFiscal()" });
+    }
+  }
+
+  if (!actions.length) return '';
+
+  // Show top priority action
+  var top = actions.sort((a,b)=>b.priority-a.priority)[0];
+  var others = actions.slice(1, 3);
+
+  return `<div style="margin-bottom:18px;background:rgba(201,168,76,.04);border:1px solid rgba(201,168,76,.2);border-radius:12px;padding:14px 18px">
+    <div style="font-size:10px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px">⚡ Prochaine action recommandée</div>
+    <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">
+      <span style="font-size:24px;flex:0 0 auto">${top.icon}</span>
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:13px;font-weight:700;color:${top.color};margin-bottom:4px">${top.title}</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.5">${top.desc}</div>
+        ${others.length?`<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">${others.map(a=>`<span style="font-size:10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:2px 8px;color:var(--muted)">${a.icon} ${a.title}</span>`).join('')}</div>`:''}
+      </div>
+      ${top.ctaFn?`<button class="btn btn-ghost" onclick="${top.ctaFn}" style="flex:0 0 auto;font-size:11px;padding:5px 12px">${top.cta} →</button>`:''}
+    </div>
+  </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// UNDO — buffer des 10 dernières suppressions
+// ════════════════════════════════════════════════════════════════════
+var _undoBuffer = []; // [{type:'trans'|'asset', data:..., ts:...}]
+
+function _pushUndo(type, data) {
+  _undoBuffer.unshift({ type, data, ts: Date.now() });
+  if (_undoBuffer.length > 10) _undoBuffer.pop();
+}
+
+function _showUndoToast(label) {
+  var el = document.getElementById('toast');
+  if (!el) return;
+  el.innerHTML = esc(label) + ' <button onclick="undoLast()" style="background:none;border:none;color:var(--gold);cursor:pointer;font-family:inherit;font-size:12px;font-weight:700;padding:0 0 0 10px;text-decoration:underline">Annuler</button>';
+  el.className = 'toast show toast-ok';
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function(){ el.classList.remove('show'); }, 5000);
+}
+
+function undoLast() {
+  var entry = _undoBuffer.shift();
+  if (!entry) { toast('ℹ️ Rien à annuler'); return; }
+  if (entry.type === 'trans') {
+    // Re-add deleted transaction(s)
+    var toRestore = Array.isArray(entry.data) ? entry.data : [entry.data];
+    toRestore.forEach(function(t){ if(!transactions.find(x=>x.id===t.id)) transactions.push(t); });
+    localStorage.setItem('pat3_trans', JSON.stringify(transactions));
+    renderDep();
+    toast('✅ Transaction restaurée');
+  } else if (entry.type === 'asset') {
+    if (!assets.find(a=>a.id===entry.data.id)) assets.push(entry.data);
+    saveAll(); renderSubPage(currentSubPage);
+    toast('✅ Actif restauré');
+  }
+}
+
+// Patch _deleteTrans to use undo buffer
+var _origDeleteTrans = _deleteTrans;
+_deleteTrans = function(id) {
+  var t = transactions.find(x=>x.id===id);
+  if (!t) return;
+  // For transfers, collect both legs
+  var toDelete = t.type==='transfer' && t.transferId
+    ? transactions.filter(x=>x.transferId===t.transferId)
+    : [t];
+  _pushUndo('trans', JSON.parse(JSON.stringify(toDelete)));
+  // Remove
+  var tids = new Set(toDelete.map(x=>x.id));
+  transactions = transactions.filter(x=>!tids.has(x.id));
+  localStorage.setItem('pat3_trans', JSON.stringify(transactions));
+  renderDep();
+  _showUndoToast('Transaction supprimée');
+};
+window._deleteTrans = _deleteTrans;
+
+// ════════════════════════════════════════════════════════════════════
+// INDICATEUR FRAÎCHEUR DES COURS dans le tableau actions
+// ════════════════════════════════════════════════════════════════════
+// _priceAge is defined in the fetch section above — used in renderCatTable
+// Injected as a data attribute into stock rows for display
 </script>
 
 <!-- CSV IMPORT MODAL -->
